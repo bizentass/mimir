@@ -168,6 +168,19 @@ class Application extends Controller {
     }
   }
 
+  def schemaForQuery(query: String, db: String) = Action {
+    try {
+      webAPI.openBackendConnection()
+      
+      val result = webAPI.schemaForQuery(query)
+
+      Ok(result)
+    }
+    finally {
+      webAPI.closeBackendConnection()
+    }
+  }
+
   def queryJson(query: String, db: String) = Action {
     if(!db.equalsIgnoreCase(webAPI.getCurrentDB)) {
       webAPI = new WebAPI(dbName = db)

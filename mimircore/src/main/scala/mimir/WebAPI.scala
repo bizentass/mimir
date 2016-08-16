@@ -194,6 +194,39 @@ class WebAPI(dbName: String = "test.db", backend: String = "sqlite") {
     return new WebStringResult(name);
   }
 
+  def schemaForQuery(query: String): String =
+  {
+    val source = new StringReader(query)
+    val parser = new MimirJSqlParser(source)
+
+    val rawQuery =
+      try {
+        val stmt: Statement = parser.Statement();
+        if(stmt.isInstanceOf[Select]){
+          db.sql.convert(stmt.asInstanceOf[Select])
+        } else {
+          throw new Exception("schemaForQuery got statement that is not SELECT")
+        }
+
+      } catch {
+        case e: Throwable => {
+          e.printStackTrace()
+          return "ERROR: "+e.getMessage()
+        }
+      }
+    
+    val name = QueryNamer.nameQuery(db.optimize(rawQuery))
+
+    //return new WebStringResult(name);
+    return JSONBuilder.list(rawQuery.schema.map({
+      case (name, t) => JSONBuilder.dict(Map(
+        "name" -> JSONBuilder.string(name),
+        "type" -> JSONBuilder.string(Type.toString(t)) 
+        ))
+      })
+    )
+  }
+
   def close(): Unit = {
     db.backend.close()
   }
