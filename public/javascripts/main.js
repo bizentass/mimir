@@ -329,7 +329,24 @@ $( document ).ready(function() {
             } else {
                 on_ready(res["result"])
             }
-        })        
+        })         
+    }
+
+    function get_query_schema(on_ready) 
+    {
+        var query = $("#last_query_field").val().replace(";.*","");
+        var db = $("#db_field").val();
+        var schema_query = 'querySchema?query='+query+';&db='+db;
+
+        $.get(schema_query, function (res) {
+            console.log(res);
+            if(res.hasOwnProperty('error')) {
+                fault = true;
+                errormessage += res.error+'<br/>';
+            } else {
+                on_ready(res["result"])
+            }
+        })         
     }
 
     /* Lens create buttons */
@@ -420,19 +437,6 @@ $( document ).ready(function() {
         })
     });
 
-     $(".add_data_btn").click( function() {
-        get_query_name(function(name) {
-            $("#sm_lens_name").val(name+"MATCHED");
-            $("#black-box").show();
-            $("#sm_lens_div").show();
-
-            $("#black-box").click( function() {
-                $("#sm_lens_div").hide();
-                $(this).hide();
-            });
-        })
-    });
-
 
     $("#sm_lens_create_btn").click( function() {
         var name = $("#sm_lens_name").val();
@@ -452,6 +456,46 @@ $( document ).ready(function() {
 
         $("#query_textarea").val(query);
         $("#query_btn").trigger("click");
+    });
+
+    // assigns a value to each item in the list to later be used
+    // to findout which one was selected
+    $('#ad_list button').each(function(i,el){
+        el.value = i+1;
+    });
+
+    //get the table name you selected and the shcma for the lastest query text
+     $(".add_data_btn").click( function() {
+        get_query_name(function(name) {             // gets the new lens name
+            var ad_lens_name = name+"MATCHED";
+        })
+
+        get_query_schema(function(schema) {         // gets the schema from latest query
+            var qSchema = schema;
+        })
+
+        //var ad = document.getElementById("ad_list");
+        //var selected_table = ad.buttons[ad.selectedIndex].text;
+
+        //var name = $("#sm_lens_name").val();
+        if(ad_lens_name === "") {
+            alert("Error obtaining new lens name");
+            return;
+        }
+
+        //var param = $("#sm_lens_param").val();      // need to make this the selected table
+        //param = param.split("[")[1].replace("]", "");
+        qSchema = qSchema.split("[")[1].replace("]", "");  // seeing if it cleans up the input
+
+        var origquery = $("#last_query_field").val();                   //[       ]name until i get the real selected name
+        var createlens = "CREATE LENS "+ad_lens_name+" AS SELECT * FROM "+"RATINGS1"+" WITH SCHEMA_MATCHING("+qSchema+");" //needs to be schema of last query field* is currently nothign
+
+        var select = origquery+" UNIONALL SELECT * FROM "+ad_lens_name+";";
+        var query = createlens+"\n"+select;
+
+        $("#query_textarea").val(query);
+        $("#query_btn").trigger("click");
+
     });
 
     Mimir.visualization.drawGraph();

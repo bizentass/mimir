@@ -50,16 +50,6 @@
                                     <li><a class="db_link">@x</a></li>
                                 }
 
-                                <!-- Used in nav_bar for testing purposes 
-                                <li role="separator" class="divider"></li>
-                                <li class="dropdown-header" id="tables_header">Tables</li>
-                                @webAPI.getAllTables.map { x =>
-                                    @if(!x.equals("MIMIR_LENSES") && !x.endsWith("_BACKEND")) {
-                                        <li><a class="table_link ">@x</a></li>
-                                    }
-                                }
-                                Used in nav_bar for testing purposes -->
-
                                 <li role="separator" class="divider"></li>
                                 <li><a id="create_database">Create Database</a></li>
                             </ul>
@@ -135,18 +125,18 @@
                         <div class="dropdown">
                             <button class="btn btn-primary dropdown-toggle" style="width:100%;text-align:left;" type="button" data-toggle="dropdown">Add Data
                             <span class="caret"></span></button>
-                            <ul class="dropdown-menu">
+                            <ul class="dropdown-menu" id="ad_list">
                                 <li class="dropdown-header" >Raw Data Tables</li>
                                 @webAPI.getAllTables.map { x =>
                                     @if(!x.equals("MIMIR_LENSES") && !x.endsWith("_BACKEND")) {
                                         <li><button class="lens_btn add_data_btn">@x</button></li>
                                     }
                                 }
-                                <li role="separator" class="divider"></li>
+                                <!--<li role="separator" class="divider"></li>
                                 <li class="dropdown-header">Applied Lenses</li>
                                 @webAPI.getAllLenses.map { x =>
-                                <li><a class="lens_link">@x</a></li>
-                                }
+                                <li><a class="lens_link add_data_btn">@x</a></li>
+                                } -->
                             </ul>
                         </div>
                         
