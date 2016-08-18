@@ -344,7 +344,7 @@ $( document ).ready(function() {
                 fault = true;
                 errormessage += res.error+'<br/>';
             } else {
-                on_ready(res["result"])
+                on_ready(JSON.parse(res));
             }
         })         
     }
@@ -468,33 +468,42 @@ $( document ).ready(function() {
      $(".add_data_btn").click( function() {
         get_query_name(function(name) {             // gets the new lens name
             var ad_lens_name = name+"MATCHED";
+
+            get_query_schema(function(schema) {         // gets the schema from latest query
+                var qSchema = schema;
+                var schemaString = "";
+
+                for (i = 0; i < qSchema.length; i++) { 
+                    if(i == qSchema.length -1){
+
+                        schemaString += qSchema[i].name +" "+ qSchema[i].type;
+
+                    }else {
+
+                        schemaString += qSchema[i].name +" "+ qSchema[i].type+ ", ";
+
+                    }
+                }
+
+                var origquery = $("#last_query_field").val();                   //[       ]name until i get the real selected name
+                var createlens = "CREATE LENS "+ad_lens_name+" AS SELECT * FROM "+"RATINGS1"+" WITH SCHEMA_MATCHING("+schemaString+");" //needs to be schema of last query field* is currently nothign
+
+                var select = origquery+" UNION ALL SELECT * FROM "+ad_lens_name+";";
+                var query = createlens+"\n"+select;
+
+                $("#query_textarea").val(query);
+                $("#query_btn").trigger("click");
+            })
+
         })
 
-        get_query_schema(function(schema) {         // gets the schema from latest query
-            var qSchema = schema;
-        })
+        
 
         //var ad = document.getElementById("ad_list");
         //var selected_table = ad.buttons[ad.selectedIndex].text;
 
         //var name = $("#sm_lens_name").val();
-        if(ad_lens_name === "") {
-            alert("Error obtaining new lens name");
-            return;
-        }
-
-        //var param = $("#sm_lens_param").val();      // need to make this the selected table
-        //param = param.split("[")[1].replace("]", "");
-        qSchema = qSchema.split("[")[1].replace("]", "");  // seeing if it cleans up the input
-
-        var origquery = $("#last_query_field").val();                   //[       ]name until i get the real selected name
-        var createlens = "CREATE LENS "+ad_lens_name+" AS SELECT * FROM "+"RATINGS1"+" WITH SCHEMA_MATCHING("+qSchema+");" //needs to be schema of last query field* is currently nothign
-
-        var select = origquery+" UNIONALL SELECT * FROM "+ad_lens_name+";";
-        var query = createlens+"\n"+select;
-
-        $("#query_textarea").val(query);
-        $("#query_btn").trigger("click");
+        
 
     });
 
