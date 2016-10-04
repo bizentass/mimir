@@ -21,7 +21,6 @@ object SQLiteCompat {
 
 object MimirCast extends org.sqlite.Function with LazyLogging {
 
-
     @Override
     def xFunc(): Unit = { // 1 is int, double is 2, 3 is string, 5 is null
       if (args != 2) { throw new java.sql.SQLDataException("NOT THE RIGHT NUMBER OF ARGS FOR MIMIRCAST, EXPECTED 2 IN FORM OF MIMIRCAST(COLUMN,TYPE)") }
