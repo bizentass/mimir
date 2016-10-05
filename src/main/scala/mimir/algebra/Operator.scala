@@ -1,5 +1,7 @@
 package mimir.algebra;
 
+import java.sql.SQLException
+
 /**
  * Abstract parent class of all relational algebra operators
  */
@@ -67,6 +69,21 @@ abstract class Operator
    */
   def recurExpressions(op: Expression => Expression): Operator =
     rebuildExpressions(expressions.map( op(_) ))
+
+  /**
+   * Apply a method to recursively rewrite all of the Expressions
+   * in this object, with types available
+   */
+  def recurExpressions(op: (Expression, ExpressionChecker) => Expression): Operator =
+  {
+    val checker = 
+      children match {
+        case Nil         => new ExpressionChecker()
+        case List(child) => Typechecker.typecheckerFor(child)
+        case _           => throw new SQLException("Don't know how to get types for multiple columns")
+    }
+    recurExpressions(op(_, checker))
+  }
 }
 
 /**

@@ -1,6 +1,7 @@
 package mimir.sql;
 
 import java.sql._
+import com.typesafe.scalalogging.slf4j.LazyLogging
 
 import mimir.Methods
 import mimir.algebra.{Type,Operator}
@@ -11,7 +12,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 ;
 
-class JDBCBackend(backend: String, filename: String) extends Backend
+class JDBCBackend(backend: String, filename: String) extends Backend with LazyLogging
 {
   var conn: Connection = null
   var openConnections = 0
@@ -21,11 +22,12 @@ class JDBCBackend(backend: String, filename: String) extends Backend
   val tableSchemas: scala.collection.mutable.Map[String, List[(String, Type.T)]] = mutable.Map()
 
   def open() = {
+    logger.trace("OPEN")
     this.synchronized({
       assert(openConnections >= 0)
       if (openConnections == 0) {
         conn = backend match {
-          case "sqlite" =>
+          case "sqlite" | "sqlite-inline" =>
             Class.forName("org.sqlite.JDBC")
             val path = java.nio.file.Paths.get("databases", filename).toString
             var c = java.sql.DriverManager.getConnection("jdbc:sqlite:" + path)
@@ -48,6 +50,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend
 
 
   def close(): Unit = {
+    logger.trace("CLOSE")
     this.synchronized({
       if (openConnections > 0) {
         openConnections = openConnections - 1
@@ -66,7 +69,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend
 
   def execute(sel: String): ResultSet = 
   {
-    //println(sel)
+    logger.debug(s"SELECT: $sel")
     try {
       if(conn == null) {
         throw new SQLException("Trying to use unopened connection!")
@@ -82,7 +85,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend
   }
   def execute(sel: String, args: List[String]): ResultSet = 
   {
-    //println(""+sel+" <- "+args)
+    logger.debug(s"SELECT: $sel <- $args")
     try {
       if(conn == null) {
         throw new SQLException("Trying to use unopened connection!")
@@ -102,6 +105,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend
   
   def update(upd: String): Unit =
   {
+    logger.debug(s"UPDATE: $upd")
     if(conn == null) {
       throw new SQLException("Trying to use unopened connection!")
     }
@@ -112,6 +116,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend
 
   def update(upd: List[String]): Unit =
   {
+    logger.debug(s"UPDATE: $upd")
     if(conn == null) {
       throw new SQLException("Trying to use unopened connection!")
     }
@@ -123,6 +128,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend
 
   def update(upd: String, args: List[String]): Unit =
   {
+    logger.debug(s"UPDATE: $upd <- $args")
     if(conn == null) {
       throw new SQLException("Trying to use unopened connection!")
     }
@@ -149,7 +155,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend
         if(!tables.contains(table.toUpperCase)) return None
 
         val cols = backend match {
-          case "sqlite" => conn.getMetaData().getColumns(null, null, table, "%")
+          case "sqlite" | "sqlite-inline" => conn.getMetaData().getColumns(null, null, table, "%")
           case "oracle" => conn.getMetaData().getColumns(null, "ARINDAMN", table, "%")  // TODO Generalize
         }
 
@@ -178,7 +184,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend
 
     val metadata = conn.getMetaData()
     val tables = backend match {
-      case "sqlite" => metadata.getTables(null, null, "%", null)
+      case "sqlite" | "sqlite-inline" => metadata.getTables(null, null, "%", null)
       case "oracle" => metadata.getTables(null, "ARINDAMN", "%", null) // TODO Generalize
     }
 
@@ -194,10 +200,15 @@ class JDBCBackend(backend: String, filename: String) extends Backend
 
   def specializeQuery(q: Operator): Operator = {
     backend match {
-      case "sqlite" => SpecializeForSQLite(q)
+      case "sqlite" | "sqlite-inline" => SpecializeForSQLite(q)
       case "oracle" => q
     }
   }
-
+  def compileForBestGuess(q: Operator): Option[Operator] = {
+    backend match {
+      case "sqlite-inline" => Some(SQLiteVGTerms.bestGuess(q, conn))
+      case _ => None
+    }
+  }
   
 }

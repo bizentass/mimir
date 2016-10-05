@@ -53,5 +53,6 @@ abstract class Backend {
   def close()
 
   def specializeQuery(q: Operator): Operator
+  def compileForBestGuess(q: Operator): Option[Operator]
 
 }

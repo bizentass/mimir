@@ -33,6 +33,17 @@ object JDBCUtils {
     }
   }
 
+  def convertDate(c: Calendar): DatePrimitive =
+    DatePrimitive(c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DATE))
+  def convertDate(d: Date): DatePrimitive =
+  {
+    val cal = Calendar.getInstance();
+    cal.setTime(d)
+    convertDate(cal)
+  }
+  def convertDate(s: String): DatePrimitive =
+    convertDate(Date.valueOf(s))
+
   def convertField(t: Type.T, results: ResultSet, field: Integer): PrimitiveValue =
   {
     val ret =
@@ -53,16 +64,15 @@ object JDBCUtils {
         case Type.TBool =>
           BoolPrimitive(results.getInt(field) != 0)
         case Type.TDate => 
-          val calendar = Calendar.getInstance()
           try {
-            calendar.setTime(results.getDate(field))
+            convertDate(results.getDate(field))
           } catch {
             case e: SQLException =>
-              calendar.setTime(Date.valueOf(results.getString(field)))
+              convertDate(results.getString(field))
             case e: NullPointerException =>
               new NullPrimitive
           }
-          DatePrimitive(calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DATE))
+          
       }
     if(results.wasNull()) { NullPrimitive() }
     else { ret }

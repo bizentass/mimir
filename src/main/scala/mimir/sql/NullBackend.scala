@@ -32,5 +32,6 @@ class NullBackend(schema: Map[String, List[(String,Type.T)]]) extends Backend {
   def close() = {}
 
   def specializeQuery(q: Operator) = q
+  def compileForBestGuess(q: Operator): Option[Operator] = None
 
 }

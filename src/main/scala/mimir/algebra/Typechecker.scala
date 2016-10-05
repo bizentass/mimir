@@ -79,7 +79,7 @@ class ExpressionChecker(scope: (String => Type.T) = Map().apply _) extends LazyL
 
 }
 
-object Typechecker {
+object Typechecker extends LazyLogging {
 
 	val simpleChecker = new ExpressionChecker();
 	val weakChecker = new ExpressionChecker((_) => Type.TAny)
@@ -97,6 +97,7 @@ object Typechecker {
 	def typecheckerFor(o: Operator): ExpressionChecker =
 	{
 		val scope = schemaOf(o).toMap;
+		logger.debug(s"New Typechecker For:\n$o \n  ---> Scope: $scope");
 		new ExpressionChecker(scope(_))	
 	}
 

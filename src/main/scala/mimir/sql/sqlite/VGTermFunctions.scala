@@ -1,13 +1,17 @@
 package mimir.sql.sqlite;
 
+import mimir.algebra._;
+import mimir.ctables._;
+import scala.collection._;
+
 object SQLiteVGTerms {
-  val rewrite(o:Operator, conn: java.sql.Connection): Operator =
+  def bestGuess(o:Operator, conn: java.sql.Connection): Operator =
   {
-    new VGTermFunctionRewriter(conn).rewrite(o)
+    new SQLiteVGTermsBestGuess(conn).rewrite(o)
   }
 }
 
-class VGTermFunctionRewriter(conn:java.sql.Connection) {
+class SQLiteVGTermsBestGuess(conn:java.sql.Connection) {
   val functionCache = mutable.Map[(String,Int), String]()
 
   def rewrite(e: Expression, scope: ExpressionChecker): Expression =
@@ -17,11 +21,16 @@ class VGTermFunctionRewriter(conn:java.sql.Connection) {
       case VGTerm((modelName, model), idx, inputArgs) =>
         val args = inputArgs.map(rewrite(_, scope))
 
-        functionCache.get((model,idx)) match {
+        functionCache.get((modelName,idx)) match {
           case Some(fname) => Function(fname, args)
           case None =>
-            val fn = new VGTermFunction(model, idx, args.map(scope.typeOf(_)))
-            val fname = "__MIMIR_VGTERM_"+modelName+"_"+idx
+            val argTypes = args.map(scope.typeOf(_))
+            val fn = new VGTermGuess(model, idx, argTypes)
+            val fname = "__MIMIR_SQLITE_VGTERM_"+modelName+"_"+idx
+            FunctionRegistry.registerFunction(
+              fname,
+              model.varType(idx, _)
+            )
             org.sqlite.Function.create(conn, fname, fn)
             functionCache.put((modelName,idx), fname)
             Function(fname, args)
@@ -32,29 +41,20 @@ class VGTermFunctionRewriter(conn:java.sql.Connection) {
 
   }
 
-  def rewrite(o: Operator): Operator =
-    val typer = Typechecker.typecheckerFor(o)
-    o.recurExpressions(rewrite(_, typer)).
+  def rewrite(o: Operator): Operator = {
+    o.recurExpressions(rewrite(_, _)).
       recur(rewrite(_))
   }
 
 }
 
-
-class VGTermFunction(
+class VGTermGuess(
   model: Model, 
   idx: Int, 
   argTypes: List[Type.T]
-) extends org.sqlite.Function {
+) extends SimpleMimirFunction(argTypes) {
 
-  @Override
-  def xFunc(): Unit = {
-    try {
-      result(8000);
-    } catch {
-      case _: java.sql.SQLDataException => throw new java.sql.SQLDataException();
-    }
-  }
-
+  def apply(args: List[PrimitiveValue]): PrimitiveValue =
+    model.bestGuess(idx, args)
 
 }

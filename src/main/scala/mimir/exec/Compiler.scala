@@ -130,14 +130,21 @@ class Compiler(db: Database) extends LazyLogging {
     val mostlyDeterministicOper =
       InlineVGTerms.optimize(oper)
 
-    // Deal with the remaining VG-Terms.  The best way to do this would
-    // be a database-specific "BestGuess" UDF.  Unfortunately, this doesn't
-    // exist at the moment, so we fall back to the Guess Cache
+    // Deal with the remaining VG-Terms.  
     val fullyDeterministicOper =
-      db.bestGuessCache.rewriteToUseCache(mostlyDeterministicOper)
+      db.backend.compileForBestGuess(mostlyDeterministicOper) match {
+
+        // The best way to do this is a database-specific "BestGuess" UDF.  
+        case Some(rewrite) => 
+          rewrite
+
+        // This UDF doesn't always exist... if so, fall back to the Guess Cache
+        case None => {}
+          db.bestGuessCache.rewriteToUseCache(mostlyDeterministicOper)
+      }
 
     // And return
-    fullyDeterministicOper
+    return fullyDeterministicOper
   }
 
   /**

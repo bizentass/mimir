@@ -1,6 +1,8 @@
 package mimir.algebra;
 
 import java.sql._
+import java.io._
+import java.util.Base64
 
 object OperatorUtils {
     
@@ -119,4 +121,19 @@ object OperatorUtils {
       case BoolPrimitive(true) => oper
       case _ => Select(condition, oper)
     }
+
+  def serializeOperator(oper: Operator): String = 
+  {
+    val baos = new ByteArrayOutputStream();
+    val oos = new ObjectOutputStream(baos);
+    oos.writeObject(oper);
+    return Base64.getEncoder().encodeToString(baos.toByteArray());
+  }
+
+  def deserializeOperator(s: String): Operator =
+  {
+    val bais = new ByteArrayInputStream(Base64.getDecoder().decode(s));
+    val ois = new ObjectInputStream(bais);
+    return ois.readObject().asInstanceOf[Operator]
+  }
 }
