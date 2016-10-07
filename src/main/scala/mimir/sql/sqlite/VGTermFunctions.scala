@@ -29,7 +29,8 @@ class SQLiteVGTermsBestGuess(conn:java.sql.Connection) {
             val fname = "__MIMIR_SQLITE_VGTERM_"+modelName+"_"+idx
             FunctionRegistry.registerFunction(
               fname,
-              model.varType(idx, _)
+              fn(_),
+              model.varType(idx, _:List[Type.T])
             )
             org.sqlite.Function.create(conn, fname, fn)
             functionCache.put((modelName,idx), fname)
