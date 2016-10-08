@@ -52,6 +52,7 @@ class ExpressionChecker(scope: (String => Type.T) = Map().apply _) extends LazyL
 				} catch {
 					case x:NoSuchElementException => throw new MissingVariable(name, x)
 				}
+			case JDBCVar(t) => t
 			case Function("CAST", fargs) =>
 				// Special case CAST
 				Eval.inline(fargs(1)) match {
@@ -125,16 +126,22 @@ object Typechecker extends LazyLogging {
 				val groupBySchema: List[(String, Type.T)] = groupBy.map(x => (x.toString, chk.typeOf(x)) )
 
 				/* Get function name, check for AVG *//* Get function parameters, verify type */
-				val aggSchema: List[(String, Type.T)] = args.map(x => if(x.function == "AVG"){ (x.alias, TFloat) }
-					else if(x.function == "COUNT") { (x.alias, TInt)}
-					else{ val typ = Typechecker.escalate(x.columns.map(x => chk.typeOf(x)))
-						assertNumeric(typ)
-						(x.alias, typ)
+				val aggSchema: List[(String, Type.T)] = args.map(x => 
+					x.function match {
+						case "AVG" => (x.alias, TFloat)
+						case "COUNT" | "COUNT_DISTINCT" => (x.alias, TInt)
+						case "SUM" | "MAX" | "MIN" => {
+							(x.alias, assertNumeric(chk.typeOf(x.columns(0))))
+						}
+						case "NTH" => {
+							(x.alias, chk.typeOf(x.columns(0)))
+						}
+						case fn => throw new SQLException("Unknown Aggregate Function: '"+fn+"'")
 					}
 				)
 
 				/* Send schema to parent operator */
-				val sch = groupBySchema ++ aggSchema ++ srcSchema
+				val sch = groupBySchema ++ aggSchema
 				//println(sch)
 				sch
 
@@ -167,7 +174,7 @@ object Typechecker extends LazyLogging {
 
 	def assertNumeric(t: Type.T): Type.T =
 	{
-		if(escalate(t, TFloat) != TFloat){
+		if(escalate(t, TFloat, "Numeric") != TFloat){
 			throw new TypeException(t, TFloat, "Numeric")
 		}
 		t;

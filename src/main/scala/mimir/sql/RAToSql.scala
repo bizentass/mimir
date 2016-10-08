@@ -12,7 +12,7 @@ import mimir.util.TypeUtils
 import net.sf.jsqlparser.expression.operators.arithmetic._
 import net.sf.jsqlparser.expression.operators.conditional._
 import net.sf.jsqlparser.expression.operators.relational._
-import net.sf.jsqlparser.expression.{BinaryExpression, DoubleValue, Function, LongValue, NullValue, InverseExpression, StringValue, WhenClause}
+import net.sf.jsqlparser.expression.{BinaryExpression, DoubleValue, Function, LongValue, NullValue, InverseExpression, StringValue, WhenClause, JdbcParameter}
 import net.sf.jsqlparser.{schema, expression}
 import net.sf.jsqlparser.schema.Column
 import net.sf.jsqlparser.statement.select.{SelectBody, PlainSelect, SubSelect, SelectExpressionItem, FromItem, SelectItem, SubJoin}
@@ -117,22 +117,27 @@ class RAToSql(db: Database) {
 
         subBody.setSelectItems(
           new java.util.ArrayList(
-            args.map( (arg) => {
-              val item = new SelectExpressionItem()
-              item.setAlias(arg.alias)
-              val func = new Function()
-              func.setName(arg.function)
-              func.setParameters(new ExpressionList(new java.util.ArrayList(
-                arg.columns.map(convert(_, getSchemas(childFroms))))))
-
-              item.setExpression(func)
-              item
-            }) ++
             gbcols.map( (col) => {
               val item = new SelectExpressionItem()
               val column =  convert(col, getSchemas(childFroms))
               item.setAlias(column.asInstanceOf[Column].getColumnName())
               item.setExpression(column)
+              item
+            })++args.map( (arg) => {
+              val item = new SelectExpressionItem()
+              item.setAlias(arg.alias)
+              val func = new Function()
+              arg.function match {
+                case "COUNT_DISTINCT" => {
+                  func.setName("COUNT")
+                  func.setDistinct(true)
+                }
+                case fn => func.setName(arg.function)
+              }
+              func.setParameters(new ExpressionList(new java.util.ArrayList(
+                arg.columns.map(convert(_, getSchemas(childFroms))))))
+
+              item.setExpression(func)
               item
             })
           )
@@ -343,6 +348,7 @@ class RAToSql(db: Database) {
       case Arithmetic(Arith.Div, l, r)  => bin(new Division(), l, r, sources)
       case Arithmetic(Arith.And, l, r)  => new AndExpression(convert(l, sources), convert(r, sources))
       case Arithmetic(Arith.Or, l, r)   => new OrExpression(convert(l, sources), convert(r, sources))
+      case JDBCVar(_) => new JdbcParameter()
       case Var(n) => {
         val src = sources.find( {
           case (_, vars) => vars.exists( _.equalsIgnoreCase(n) )

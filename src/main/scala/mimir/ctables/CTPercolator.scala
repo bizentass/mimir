@@ -146,6 +146,10 @@ object CTPercolator {
   {
     val schema = oper.schema;
 
+    if(CTables.isDeterministic(oper)){
+      return (oper, schema.map(_._1).map( (_, BoolPrimitive(true)) ).toMap, BoolPrimitive(true))
+    }
+
     oper match {
       case Project(columns, src) => {
         val (rewrittenSrc, colDeterminism, rowDeterminism) = percolateLite(src);

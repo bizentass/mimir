@@ -162,6 +162,8 @@ class BestGuessCache(db: Database) extends LazyLogging {
     // the TypeInference lens completely messes with the typechecker.
     val typechecker = new ExpressionChecker(Typechecker.schemaOf(InlineVGTerms.optimize(input)).toMap)
 
+    logger.debug(s"Building cache on $lensName-$varIdx("+args+")")
+
     if(db.getTableSchema(cacheTable) != None) {
       dropCacheTable(cacheTable)
     }
@@ -172,6 +174,7 @@ class BestGuessCache(db: Database) extends LazyLogging {
     db.query(input).foreachRow(row => {
       val compiledArgs = args.map(Provenance.plugInToken(_, row.provenanceToken()))
       val tuple = row.currentTuple()
+      logger.debug(s"Processing: $tuple")
       val dataArgs = compiledArgs.map(Eval.eval(_, tuple))
       val guess = model.bestGuess(varIdx, dataArgs)
       val updateQuery = 

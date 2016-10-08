@@ -17,7 +17,7 @@ object ListUtils {
   def unzip[A](l: List[List[A]]): List[List[Option[A]]] =
   {
     // Only run if at least one nested list is non-empty
-    if(l.exists( _ == Nil)){
+    if(l.exists( _.length > 0 )){
       // unzip one layer of nested maps
       val (hd, tl) = l.map({
         case hd :: tl => (Some(hd), tl)

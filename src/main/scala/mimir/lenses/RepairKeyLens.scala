@@ -17,13 +17,13 @@ import scala.util._
 class RepairKeyLens(name: String, args: List[Expression], source: Operator)
   extends Lens(name, args, source) with LazyLogging
 {
-  val keyCols: List[String] = args.map(_.toString)
+  val keyCols: List[String] = args.map(_.asInstanceOf[PrimitiveValue].asString)
   val dependentCols: List[String] = 
     (source.schema.map(_._1).toSet -- keyCols.toSet).toList
 
   var repairs: Map[List[PrimitiveValue], List[List[PrimitiveValue]]] = null
 
-  def lensType: String = "FDRepair"
+  def lensType: String = "REPAIR_KEY"
   def schema() = source.schema
 
   def model =
@@ -44,7 +44,7 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
       Aggregate(
         dependentCols.flatMap( (col) => {
           List(
-            AggregateArg("NTH", List(IntPrimitive(0), Var(col)), col),
+            AggregateArg("NTH", List(Var(col), IntPrimitive(0)), col),
             AggregateArg("COUNT_DISTINCT", List(Var(col)), "__MIMIR_FD_COUNT_"+col)
           )
         }).toList,
@@ -75,6 +75,7 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
         )
       ).toString
     val dups = db.backend.resultRows(whichKeysAreDupped)
+    val schMap = source.schema.toMap
     
     val repairsForKey = 
       db.ra.convert(
@@ -82,7 +83,7 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
           dependentCols,
           Select(
             ExpressionUtils.makeAnd(keyCols.map( (col) => 
-              Comparison(Cmp.Eq, Var(col), Var("?"))
+              Comparison(Cmp.Eq, Var(col), JDBCVar(schMap(col)))
             )),
             source
           )
@@ -90,22 +91,36 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
       ).toString
 
     repairs = dups.map( (keyRow) => {
-      ( keyRow, 
-        ListUtils.unzip( 
-          db.backend.resultRows(repairsForKey, keyRow)
-        ).map( _.flatten.toSet.toList )
-      )
+      val candidates = 
+        db.backend.resultRows(repairsForKey, keyRow)
+      logger.debug(s"Finding repairs for $keyRow: $candidates")
+      val rowRepair = 
+        ListUtils.unzip( candidates ).
+          map( _.flatten.toSet.toList )
+      logger.debug(s"Registering repair for $keyRow: $rowRepair")      
+      ( keyRow, rowRepair )
     }).toMap
 
   }
 
+  def guessRepair(idx: Int, args: List[PrimitiveValue]): PrimitiveValue =
+  {
+    repairs.get(args) match {
+      case None => NullPrimitive()
+      case Some(rowRepair) => {
+        logger.debug(s"Repair: $args-$idx -> $rowRepair")
+        rowRepair(idx)(0)
+      }
+    }
+  }
+
 }
 
-class FDRepairModel(lens: RepairKeyLens) extends Model {
+class FDRepairModel(lens: RepairKeyLens) extends Model with LazyLogging {
 
   def bestGuess(idx: Int, args: List[PrimitiveValue]): PrimitiveValue = 
   {
-    lens.repairs(args)(idx)(0)
+    lens.guessRepair(idx, args)
   }
   def reason(idx: Int, args: List[Expression]): String = 
   { 

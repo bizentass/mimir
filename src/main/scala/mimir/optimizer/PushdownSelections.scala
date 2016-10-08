@@ -106,12 +106,13 @@ object PushdownSelections {
 					)
 				)
 			}
-				
+			
+			case Select(_,_:Aggregate) => o.recur(optimize(_))
 
 			case Select(_,_) =>
 				throw new SQLException("Unhandled Select Case in Pushdown: " + o)
 
-			case _ => o.rebuild(o.children.map(optimize(_)))
+			case _ => o.recur(optimize(_))
 
 		}
 	}

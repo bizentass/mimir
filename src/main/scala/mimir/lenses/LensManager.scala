@@ -51,15 +51,8 @@ class LensManager(db: Database) {
         new SchemaMatchingLens(lensName, args, source)
       case "TYPE_INFERENCE" =>
         new TypeInferenceLens(lensName, args, source)
-    }
-  }
-
-  def lensTypeString(lens: Lens): String =
-  {
-    lens match { 
-      case _: MissingValueLens => "MISSING_VALUE"
-      case _: SchemaMatchingLens => "SCHEMA_MATCHING"
-      case _: TypeInferenceLens => "TYPE_INFERENCE"
+      case "REPAIR_KEY" =>
+        new RepairKeyLens(lensName, args, source)
     }
   }
 
@@ -106,7 +99,7 @@ class LensManager(db: Database) {
     """, List(
       StringPrimitive(lens.name), 
       StringPrimitive(lens.source.toString),
-      StringPrimitive(lensTypeString(lens)),
+      StringPrimitive(lens.lensType),
       StringPrimitive(lens.args.map(_.toString).mkString(","))
     ))
     lens.save(db)

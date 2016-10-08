@@ -8,11 +8,13 @@
   </appender>
    
   <logger name="mimir.algebra.ExpressionChecker" level="INFO"/>
-  <logger name="mimir.exec.Compiler" level="DEBUG"/>
+  <logger name="mimir.algebra.Typechecker" level="INFO"/>
+  <logger name="mimir.exec.Compiler" level="INFO"/>
   <logger name="mimir.lenses.BestGuessCache" level="INFO"/>
-  <logger name="mimir.sql.sqlite.MimirCast$" level="INFO"/>
   <logger name="mimir.ctables.CTExplainer" level="INFO"/>
-  <logger name="mimir.sql.JDBCBackend" level="DEBUG"/>
+  <logger name="mimir.sql.sqlite.MimirCast$" level="INFO"/>
+  <logger name="mimir.sql.JDBCBackend" level="INFO"/>
+  <logger name="mimir.util.LoadCSV" level="INFO"/>
  
   <root level="TRACE">
     <appender-ref ref="STDOUT" />

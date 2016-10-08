@@ -16,6 +16,7 @@ object SQLiteCompat {
     org.sqlite.Function.create(conn,"MIMIRCAST", MimirCast)
     org.sqlite.Function.create(conn,"OTHERTEST", OtherTest)
     org.sqlite.Function.create(conn,"AGGTEST", AggTest)
+    org.sqlite.Function.create(conn,"NTH", Nth)
   }
 }
 
@@ -81,5 +82,29 @@ object AggTest extends org.sqlite.Function.Aggregate {
 
   def xFinal(): Unit ={
     result(total)
+  }
+}
+
+object Nth extends org.sqlite.Function.Aggregate {
+  var step = -2
+  var ret:String = null
+
+  @Override
+  def xStep(): Unit = {
+    if(step < 0){ step = value_int(1)+1 }
+    if(step >= 1){
+      step -= 1;
+      if(step == 0){
+        ret = value_text(0)
+      }
+    }
+  }
+
+  def xFinal(): Unit ={
+    if(ret == null){
+      result()
+    } else {
+      result(ret)
+    }
   }
 }

@@ -66,6 +66,7 @@ object MCDBQueries
       //     FROM increase_per_cust, from_japan 
       //     WHERE l_orderkey=o orderkey
       //   )
+      true
     }
 
     "Query 2" >> {
@@ -97,6 +98,7 @@ object MCDBQueries
       //   FROM gamma ship gs, gamma arrv ga
       //
       // SELECT MAX(ship+arrv) FROM ship durations
+      true
     }
 
     "Query 3" >> {
@@ -116,6 +118,7 @@ object MCDBQueries
       // FROM prc_hist, lineitem, orders
       // WHERE ph_month=month(o_orderdate) AND l_orderkey=
       //       o_orderkey AND yr(o_orderdate)=1995 AND ph_partkey=l_partkey
+      true
     }
 
     "Query 4" >> {
@@ -151,6 +154,7 @@ object MCDBQueries
       //   WHERE ps_partkey=nd_partkey AND
       //         ps_suppkey=nd_suppkey
       // )
+      true
     }
   }
 

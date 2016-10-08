@@ -2,15 +2,20 @@ package mimir.util
 
 import java.io.{File, FileReader, BufferedReader}
 import java.sql.SQLException
+import com.typesafe.scalalogging.slf4j.LazyLogging
 
 import mimir.Database
-import mimir.algebra.Type
+import mimir.algebra._
+import mimir.algebra.Type._
 
 import scala.collection.mutable.ListBuffer
 
-object LoadCSV {
+object LoadCSV extends LazyLogging {
 
-  def handleLoadTable(db: Database, targetTable: String, sourceFile: File){
+  def handleLoadTable(db: Database, targetTable: String, sourceFile: File): Unit =
+    handleLoadTable(db, targetTable, sourceFile, ",")
+  def handleLoadTable(db: Database, targetTable: String, sourceFile: File, sep: String): Unit =
+  {
     val input = new BufferedReader(new FileReader(sourceFile))
     val firstLine = input.readLine()
 
@@ -18,22 +23,24 @@ object LoadCSV {
 
       case Some(sch) =>
         if(headerDetected(firstLine)) {
-          populateTable(db, input, targetTable, sch) // Ignore header since table already exists
+          val schMap = sch.toMap
+          val tgtSch = firstLine.split(sep).map(_.toUpperCase).map((x) => (x, schMap(x))).toList
+          populateTable(db, input, targetTable, tgtSch, sep) // Ignore header since table already exists
         }
         else {
           populateTable(
             db,
             new BufferedReader(new FileReader(sourceFile)), // Reset to top
             targetTable,
-            sch
+            sch,
+            sep
           )
         }
 
       case None =>
         if(headerDetected(firstLine)) {
           db.backend.update("CREATE TABLE "+targetTable+"("+
-            firstLine.split(",").map((x) => "\'"+x.trim.replace(" ", "")+"\'" ).mkString(" varchar, ")+
-            " varchar)")
+            firstLine.split(sep).map(_+" varchar").mkString(", ")+")")
 
           handleLoadTable(db, targetTable, sourceFile)
         }
@@ -42,6 +49,7 @@ object LoadCSV {
         }
     }
   }
+
 
   /**
    * A placeholder method for an unimplemented feature
@@ -56,29 +64,41 @@ object LoadCSV {
     true // For now, assume every CSV file has a header
   }
 
+  def parse(s: String, t:Type.T): PrimitiveValue =
+  {
+    t match {
+      case TInt => IntPrimitive(s.toLong)
+      case TFloat => FloatPrimitive(s.toDouble)
+      case TString => StringPrimitive(s)
+      case TDate => {
+        val YMD = s.split("-").map(_.toInt)
+        DatePrimitive(YMD(0), YMD(1), YMD(2))
+      }
+    }
+  }
+
   private def populateTable(db: Database,
                             src: BufferedReader,
                             targetTable: String,
-                            sch: List[(String, Type.T)]): Unit = {
-    val keys = sch.map(_._1).map((x) => "\'"+x+"\'").mkString(", ")
-    val statements = new ListBuffer[String]()
-
+                            sch: List[(String, Type.T)],
+                            sep: String): Unit = {
     while(true){
       val line = src.readLine()
-      if(line == null) { if(statements.nonEmpty) db.backend.update(statements.toList); return }
+      if(line == null) { return }
 
-      val dataLine = line.trim.split(",").padTo(sch.size, "")
-      val data = dataLine.indices.map( (i) =>
-        dataLine(i) match {
-          case "" => null
-          case x => sch(i)._2 match {
-            case Type.TDate | Type.TString => "\'"+x+"\'"
-            case _ => x
-          }
-        }
-      ).mkString(", ")
-
-      statements.append("INSERT INTO "+targetTable+"("+keys+") VALUES ("+data+")")
+      db.backend.update(
+        "INSERT INTO "+targetTable+"("+sch.map(_._1).mkString(",")+
+          ") VALUES ("+sch.map((_) => "?").mkString(",")+")",
+        line.trim.
+          split(sep).
+          padTo(sch.size, "").
+          zip(sch).
+          map({ case (v, (col, t)) => 
+            logger.debug(s"Parse $col ($t): $v")
+            parse(v, t) 
+          }).
+          toList
+      )
     }
   }
 }
