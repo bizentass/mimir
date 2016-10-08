@@ -112,6 +112,14 @@ object OperatorUtils {
     );
   }
 
+  def projectColumns(cols: List[String], oper: Operator) =
+  {
+    Project(
+      cols.map( (col) => ProjectArg(col, Var(col)) ),
+      oper
+    )
+  }
+
 
   def applyFilter(condition: List[Expression], oper: Operator): Operator =
     applyFilter(condition.fold(BoolPrimitive(true))(ExpressionUtils.makeAnd(_,_)), oper)

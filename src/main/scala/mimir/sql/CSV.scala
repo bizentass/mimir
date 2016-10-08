@@ -291,7 +291,7 @@ class CSVBackend(
   {
     execute(new CCJSqlParser(new StringReader(sel)).Select());
   }
-  def execute(sel: String, args: List[String]): ResultSet = 
+  def execute(sel: String, args: List[mimir.algebra.PrimitiveValue]): ResultSet = 
   {
     throw new SQLException("No support for prepared queries");
   }
@@ -322,7 +322,7 @@ class CSVBackend(
   {
     throw new SQLException("No support for updates on CSV data");
   }
-  def update(op: String, args: List[String]): Unit = 
+  def update(op: String, args: List[mimir.algebra.PrimitiveValue]): Unit = 
   {
     throw new SQLException("No support for updates on CSV data");
   }

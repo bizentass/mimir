@@ -4,26 +4,39 @@ import java.io.File
 import java.sql._
 import java.util
 
+import com.typesafe.scalalogging.slf4j.LazyLogging
+
+import mimir._
 import mimir.algebra._
 import mimir.ctables._
+import mimir.util._
 
 import scala.collection.JavaConversions._
 import scala.util._
 
 class RepairKeyLens(name: String, args: List[Expression], source: Operator)
-  extends Lens(name, args, source)
+  extends Lens(name, args, source) with LazyLogging
 {
-  val keyCols: Set[String] = List(args.map(_.toString)).toSet
-  val dependentCols: List[String] = (source.schema.map(_._1).toSet - keyCols).toList
+  val keyCols: List[String] = args.map(_.toString)
+  val dependentCols: List[String] = 
+    (source.schema.map(_._1).toSet -- keyCols.toSet).toList
 
-  val view = 
+  var repairs: Map[List[PrimitiveValue], List[List[PrimitiveValue]]] = null
+
+  def lensType: String = "FDRepair"
+  def schema() = source.schema
+
+  def model =
+    new FDRepairModel(this)
+
+  def view: Operator = 
     Project(
       keyCols.map( (col) => ProjectArg(col, Var(col)) ).toList ++
       dependentCols.zipWithIndex.map( { case (col, idx) =>
         ProjectArg(col, 
           Conditional( 
             Comparison(Cmp.Gt, Var("__MIMIR_FD_COUNT_"+col), IntPrimitive(1)),
-            VGTerm((model, name), idx, keyCols.map(Var(_))),
+            VGTerm((name, model), idx, keyCols.map(Var(_))),
             Var(col)
           )
         )
@@ -39,8 +52,74 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
         source
       )
     )
+
+  def build(db: Database): Unit = 
+  {
+    logger.debug(s"Building Repair Key Lens $name")
+    val whichKeysAreDupped =
+      db.ra.convert(
+        OperatorUtils.projectColumns(
+          keyCols,
+          Select(
+            ExpressionUtils.makeOr(dependentCols.map( (col) => {
+              Comparison(Cmp.Gt, Var(col), IntPrimitive(1))
+            })),
+            Aggregate(
+              dependentCols.map( (col) => {
+                AggregateArg("COUNT_DISTINCT", List(Var(col)), col)
+              }),
+              keyCols.map(Var(_)).toList,
+              source
+            )
+          )
+        )
+      ).toString
+    val dups = db.backend.resultRows(whichKeysAreDupped)
+    
+    val repairsForKey = 
+      db.ra.convert(
+        OperatorUtils.projectColumns(
+          dependentCols,
+          Select(
+            ExpressionUtils.makeAnd(keyCols.map( (col) => 
+              Comparison(Cmp.Eq, Var(col), Var("?"))
+            )),
+            source
+          )
+        )
+      ).toString
+
+    repairs = dups.map( (keyRow) => {
+      ( keyRow, 
+        ListUtils.unzip( 
+          db.backend.resultRows(repairsForKey, keyRow)
+        ).map( _.flatten.toSet.toList )
+      )
+    }).toMap
+
+  }
+
 }
 
-class FDRepairModel(lens: MissingValueLens, name: String) extends Model {
+class FDRepairModel(lens: RepairKeyLens) extends Model {
 
+  def bestGuess(idx: Int, args: List[PrimitiveValue]): PrimitiveValue = 
+  {
+    lens.repairs(args)(idx)(0)
+  }
+  def reason(idx: Int, args: List[Expression]): String = 
+  { 
+    "There were multiple possible values for "+lens.name+"."+lens.dependentCols(idx)+
+    " on the row where ("+lens.keyCols.mkString(", ")+
+    ") is ("+args.map(_.toString).mkString(", ")+")"
+  }
+  def sample(idx: Int, randomness: Random, args: List[PrimitiveValue]): PrimitiveValue = 
+  {
+    val possibilities = lens.repairs(args)(idx);
+    possibilities(randomness.nextInt() % possibilities.length)
+  }
+  def varType(idx: Int, argTypes: List[Type.T]): Type.T = 
+  {
+    lens.source.schema.find(_._1 == lens.dependentCols(idx)).get._2
+  }
 }
