@@ -87,7 +87,9 @@ class LensManager(db: Database) {
         source
       );
     lens.build(db);
-    db.bestGuessCache.buildCache(lens);
+    if(!db.backend.supportsInlineBestGuess()){
+      db.bestGuessCache.buildCache(lens);
+    }
     lensCache.put(lensName, lens);
     save(lens);
   }

@@ -20,9 +20,6 @@ class NullBackend(schema: Map[String, List[(String,Type.T)]]) extends Backend {
   def update(stmt: String): Unit = {
     throw new SQLException("Null backend doesn't support query execution")
   }
-  def update(stmt: List[String]): Unit = {
-    throw new SQLException("Null backend doesn't support query execution")
-  }
   def update(stmt: String, args: List[PrimitiveValue]): Unit = {
     throw new SQLException("Null backend doesn't support query execution")
   }
@@ -32,6 +29,7 @@ class NullBackend(schema: Map[String, List[(String,Type.T)]]) extends Backend {
   def close() = {}
 
   def specializeQuery(q: Operator) = q
-  def compileForBestGuess(q: Operator): Option[Operator] = None
+  def supportsInlineBestGuess() = false
+  def compileForBestGuess(q: mimir.algebra.Operator): mimir.algebra.Operator = ???
 
 }

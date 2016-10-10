@@ -318,10 +318,6 @@ class CSVBackend(
   {
     throw new SQLException("No support for updates on CSV data");
   }
-  def update(upd: List[String]): Unit =
-  {
-    throw new SQLException("No support for updates on CSV data");
-  }
   def update(op: String, args: List[mimir.algebra.PrimitiveValue]): Unit = 
   {
     throw new SQLException("No support for updates on CSV data");
@@ -342,5 +338,6 @@ class CSVBackend(
   }
 
   def specializeQuery(q: mimir.algebra.Operator) = q
-  def compileForBestGuess(q: mimir.algebra.Operator): Option[mimir.algebra.Operator] = None
+  def supportsInlineBestGuess() = false
+  def compileForBestGuess(q: mimir.algebra.Operator): mimir.algebra.Operator = ???
 }

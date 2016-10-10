@@ -132,15 +132,12 @@ class Compiler(db: Database) extends LazyLogging {
 
     // Deal with the remaining VG-Terms.  
     val fullyDeterministicOper =
-      db.backend.compileForBestGuess(mostlyDeterministicOper) match {
-
+      if(db.backend.supportsInlineBestGuess()) {
         // The best way to do this is a database-specific "BestGuess" UDF.  
-        case Some(rewrite) => 
-          rewrite
-
+        db.backend.compileForBestGuess(mostlyDeterministicOper) 
+      } else {
         // This UDF doesn't always exist... if so, fall back to the Guess Cache
-        case None => {}
-          db.bestGuessCache.rewriteToUseCache(mostlyDeterministicOper)
+        db.bestGuessCache.rewriteToUseCache(mostlyDeterministicOper)
       }
 
     // And return

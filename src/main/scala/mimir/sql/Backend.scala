@@ -57,7 +57,8 @@ abstract class Backend {
   }
   
   def update(stmt: String): Unit
-  def update(stmt: List[String]): Unit
+  def update(stmt: List[String]): Unit =
+    stmt.foreach(update(_))
   def update(stmt: String, args: List[PrimitiveValue]): Unit
   def update(stmt: Statement): Unit =
     update(stmt.toString)
@@ -69,6 +70,7 @@ abstract class Backend {
   def close()
 
   def specializeQuery(q: Operator): Operator
-  def compileForBestGuess(q: Operator): Option[Operator]
+  def supportsInlineBestGuess(): Boolean
+  def compileForBestGuess(q: Operator): Operator
 
 }

@@ -80,7 +80,7 @@ abstract class Operator
       children match {
         case Nil         => new ExpressionChecker()
         case List(child) => Typechecker.typecheckerFor(child)
-        case _           => throw new SQLException("Don't know how to get types for multiple columns")
+        case _           => new ExpressionChecker()
     }
     recurExpressions(op(_, checker))
   }
@@ -271,4 +271,7 @@ case class LeftOuterJoin(left: Operator,
     LeftOuterJoin(c(0), c(1), condition)
   def expressions: List[Expression] = List(condition)
   def rebuildExpressions(x: List[Expression]) = LeftOuterJoin(left, right, x(0))
+
+  override def recurExpressions(op: (Expression, ExpressionChecker) => Expression): Operator =
+    LeftOuterJoin(left, right, op(condition, Typechecker.typecheckerFor(this)))
 }

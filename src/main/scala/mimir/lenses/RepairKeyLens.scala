@@ -93,7 +93,7 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
     repairs = dups.map( (keyRow) => {
       val candidates = 
         db.backend.resultRows(repairsForKey, keyRow)
-      logger.debug(s"Finding repairs for $keyRow: $candidates")
+      logger.trace(s"Finding repairs for $keyRow: $candidates")
       val rowRepair = 
         ListUtils.unzip( candidates ).
           map( _.flatten.toSet.toList )
@@ -108,7 +108,7 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
     repairs.get(args) match {
       case None => NullPrimitive()
       case Some(rowRepair) => {
-        logger.debug(s"Repair: $args-$idx -> $rowRepair")
+        logger.trace(s"Repair: $args-$idx -> $rowRepair")
         rowRepair(idx)(0)
       }
     }

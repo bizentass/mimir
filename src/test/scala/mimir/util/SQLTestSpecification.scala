@@ -99,6 +99,8 @@ abstract class SQLTestSpecification(val tempDBName:String, config: Map[String,St
     db.createLens(stmt(s).asInstanceOf[mimir.sql.CreateLens])
   def update(s: Statement) = 
     db.backend.update(s.toString())
+  def exec(f: File): Unit = stmts(f).map(update(_))
+  def exec(f: String): Unit = exec(new File(f))
   def parser = new ExpressionParser(db.lenses.modelForLens)
   def expr = parser.expr _
   def i = IntPrimitive(_:Long).asInstanceOf[PrimitiveValue]

@@ -110,7 +110,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend with LazyLo
     stmt.close()
   }
 
-  def update(upd: List[String]): Unit =
+  override def update(upd: List[String]): Unit =
   {
     logger.debug(s"UPDATE: $upd")
     if(conn == null) {
@@ -209,10 +209,15 @@ class JDBCBackend(backend: String, filename: String) extends Backend with LazyLo
       case "oracle" => q
     }
   }
-  def compileForBestGuess(q: Operator): Option[Operator] = {
+  def supportsInlineBestGuess() = 
     backend match {
-      case "sqlite-inline" => Some(SQLiteVGTerms.bestGuess(q, conn))
-      case _ => None
+      case "sqlite-inline" => true
+      case _ => false
+    }
+  def compileForBestGuess(q: Operator): Operator = {
+    backend match {
+      case "sqlite-inline" => SQLiteVGTerms.bestGuess(q, conn)
+      case _ => ???
     }
   }
   

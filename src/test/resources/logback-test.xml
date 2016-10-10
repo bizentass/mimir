@@ -11,6 +11,7 @@
   <logger name="mimir.algebra.Typechecker" level="INFO"/>
   <logger name="mimir.exec.Compiler" level="INFO"/>
   <logger name="mimir.lenses.BestGuessCache" level="INFO"/>
+  <logger name="mimir.lenses.RepairKeyLens" level="INFO"/>
   <logger name="mimir.ctables.CTExplainer" level="INFO"/>
   <logger name="mimir.sql.sqlite.MimirCast$" level="INFO"/>
   <logger name="mimir.sql.JDBCBackend" level="INFO"/>
