@@ -26,7 +26,7 @@ Mimir.sublime-workspace
 mimircore/config/jdbc.property
 
 # Serialized models
-serialized/*.db/
+serialized/*
 
 # Large databases
 databases/noisy.db
