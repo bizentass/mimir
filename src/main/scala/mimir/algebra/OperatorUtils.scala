@@ -120,6 +120,35 @@ object OperatorUtils {
     )
   }
 
+  def joinMergingColumns(cols: List[(String, (Expression,Expression) => Expression)], lhs: Operator, rhs: Operator) =
+  {
+    val allCols = lhs.schema.map(_._1).toSet ++ rhs.schema.map(_._1).toSet
+    val affectedCols = cols.map(_._1).toSet
+    val wrappedLHS = 
+      Project(
+        lhs.schema.map(_._1).map( x => 
+          ProjectArg(x, if(affectedCols.contains(x)) { Var("__MIMIR_JOIN_LHS_"+x) } 
+                        else { Var(x) }) ), 
+        lhs
+      )
+    val wrappedRHS = 
+      Project(
+        rhs.schema.map(_._1).map( x => 
+          ProjectArg(x, if(affectedCols.contains(x)) { Var("__MIMIR_JOIN_RHS_"+x) } 
+                        else { Var(x) }) ), 
+        rhs
+      )
+    Project(
+      ((allCols -- affectedCols).map( (x) => ProjectArg(x, Var(x)) )).toList ++
+      cols.map({
+        case (name, op) =>
+          ProjectArg(name, op(Var("__MIMIR_JOIN_LHS_"+name), Var("__MIMIR_JOIN_RHS_"+name)))
+
+        }),
+      Join(wrappedLHS, wrappedRHS)
+    )
+  }
+
 
   def applyFilter(condition: List[Expression], oper: Operator): Operator =
     applyFilter(condition.fold(BoolPrimitive(true))(ExpressionUtils.makeAnd(_,_)), oper)

@@ -1,14 +1,39 @@
 package mimir.tuplebundle
 
 import java.sql.SQLException
+import java.io._
+import java.util.Base64
+import java.util.Random
 
+import mimir._
 import mimir.algebra._
+import mimir.ctables._
 import mimir.sql.sqlite._
 
 object TupleBundles {
 
   val SAMPLE_COUNT = 10
-  val collections.mutable.map 
+  val tupleBundleColumn = "__MIMIR_SQLITE_TUPLEBUNDLE"
+  val checkTupleBundleFn = "__MIMIR_SQLITE_CHECK_BUNDLE"
+  val initTupleBundleFn = "__MIMIR_SQLITE_INIT_BUNDLE"
+
+  val empty = TupleBundles.serialize((0 to SAMPLE_COUNT).map ( (_) => BoolPrimitive(true) ).toArray)
+
+
+  def serialize(v: Array[PrimitiveValue]): String = 
+  {
+    val baos = new ByteArrayOutputStream();
+    val oos = new ObjectOutputStream(baos);
+    oos.writeObject(v);
+    return Base64.getEncoder().encodeToString(baos.toByteArray());
+  }
+
+  def deserialize(s: String): Array[PrimitiveValue] =
+  {
+    val bais = new ByteArrayInputStream(Base64.getDecoder().decode(s));
+    val ois = new ObjectInputStream(bais);
+    return ois.readObject().asInstanceOf[Array[PrimitiveValue]]
+  }
 
   
 }
@@ -18,7 +43,6 @@ class TupleBundleRewriter(db: Database, conn: java.sql.Connection) {
   var tupleBundleIdx = 0;
   var sampleIdx = 0;
 
-  val tupleBundleColumn = "__MIMIR_SQLITE_TUPLEBUNDLE"
 
   def nextFname(): String = 
   {
@@ -26,29 +50,37 @@ class TupleBundleRewriter(db: Database, conn: java.sql.Connection) {
     "__MIMIR_SQLITE_TUPLEBUNDLE_"+tupleBundleIdx
   }
 
+  def forceRewrite(expr: Expression, childBundles: Set[String]): Expression =
+  {
+    val schema = ExpressionUtils.getColumns(expr).toList
+    val fname = nextFname()
+    val eval = new TupleBundleEval(schema, childBundles, expr)
+    FunctionRegistry.registerFunction(
+      fname,
+      eval(_),
+      (args: List[Type.T]) => new ExpressionChecker(schema.zip(args).toMap).typeOf(expr)
+    )
+    org.sqlite.Function.create(conn, fname, eval)
+    Function(fname, schema.map(Var(_)))
+  }
+
+  def forceRewrite(expr: Expression): Expression =
+    forceRewrite(expr, ExpressionUtils.getColumns(expr))
+
   def rewrite(expr: Expression, schema:Map[String,Type.T], childBundles: Set[String]): (Expression, Boolean) =
   {
-    val argVars = ExpressionUtils.getColumns(arg.expression)
+    val argVars = ExpressionUtils.getColumns(expr)
+    val allBundles = childBundles+TupleBundles.tupleBundleColumn
     // Check to see if the expression needs to be rewritten as a tuple
     // bundle.  This is the case if...
     //  - The expression references an input that is itself a tuple bundle
     //  - The expression references a VGTerm
-    if(  !((argVars & childBundles).empty) || 
-         (CTables.isProbabilistic(arg.expression)) ){
-      val schema = argVars.toList()
-      val fname = nextFname()
-      val eval = new TupleBundleEval(schema, childBundles, expr)
-      FunctionRegistry.registerFunction(
-        fname,
-        eval(_),
-        (args: List[Type.T]) => ExprChecker(schema.zip(args).toMap).typecheck(expr)
-      )
-      org.sqlite.Function.create(conn, fname, eval)
-      (Function(fname, schema.map(Var(_))), true)
+    if(  !((argVars & allBundles).isEmpty) || 
+         (CTables.isProbabilistic(expr)) ){
+      return (forceRewrite(expr, childBundles), true)
     } else {
-      (expr, false)
+      return (expr, false)
     }
-
   }
 
 
@@ -58,7 +90,7 @@ class TupleBundleRewriter(db: Database, conn: java.sql.Connection) {
       case Project(args, child) => {
         val (newChild, childBundles) = rewrite(child)
         val (newArgs, newBundles) = args.map( (arg) => {
-            val (newExpr, needsBundle) = rewrite(arg.expression)
+            val (newExpr, needsBundle) = rewrite(arg.expression, newChild.schema.toMap, childBundles)
             (
               ProjectArg(arg.name, newExpr), 
               if(needsBundle){ Some(arg.name) } else { None }
@@ -66,47 +98,92 @@ class TupleBundleRewriter(db: Database, conn: java.sql.Connection) {
           }).unzip
         (
           Project(
-            ProjectArg(tupleBundleColumn, Var(tupleBundleColumn)) :: newArgs,
+            ProjectArg(TupleBundles.tupleBundleColumn, Var(TupleBundles.tupleBundleColumn)) :: newArgs,
             newChild
           ), 
           newBundles.flatten.toSet
         )
       }
 
-      case Select(args, child) => 
+      case Select(condition, child) => 
         val (newChild, childBundles) = rewrite(child)
+        (Select(
+          Function(TupleBundles.checkTupleBundleFn, List(Var(TupleBundles.tupleBundleColumn))),
+          OperatorUtils.projectInColumn(
+            TupleBundles.tupleBundleColumn,
+            forceRewrite(ExpressionUtils.makeAnd(Var(TupleBundles.tupleBundleColumn), condition)),
+            child
+          )
+        ), childBundles)
 
+      case Join(lhs, rhs) =>
+        val (newLHS, lhsBundles) = rewrite(lhs)
+        val (newRHS, rhsBundles) = rewrite(rhs)
 
+        (
+          OperatorUtils.joinMergingColumns(
+            List( (TupleBundles.tupleBundleColumn, 
+                   (a,b) => forceRewrite(ExpressionUtils.makeAnd(a, b))) ),
+            newLHS, newRHS
+          ),
+          lhsBundles ++ rhsBundles
+        )
 
+      case Union(lhs, rhs) =>
+        val (newLHS, lhsBundles) = rewrite(lhs)
+        val (newRHS, rhsBundles) = rewrite(rhs)
+        if(!(lhsBundles ++ rhsBundles).isEmpty) { throw new SQLException("Invalid Aggregate!") }
 
-      case _ if oper.expression == Nil || CTables.isDeterministic(oper) => 
-        oper.recur(rewrite(_))
+        (Union(newLHS, newRHS), Set[String]())
 
+      case Aggregate(args, gb, child) =>
+        val (newChild, childBundles) = rewrite(child)
+        if(!childBundles.isEmpty) { throw new SQLException("Invalid Aggregate!") }
+        
+        (
+          OperatorUtils.projectInColumn(
+            TupleBundles.tupleBundleColumn,
+            Function(TupleBundles.initTupleBundleFn, List()),
+            Aggregate(args, gb, newChild)
+          ),
+          Set[String]()
+        )
     }
   }
 }
 
-class TupleBundleEval(schema:List[(String, Type.T)], childBundles: Set[String], inputExpr: Expression) 
-  extends MimirFunction(schema.map(_._2))
+class TupleBundleEval(schema:List[String], childBundles: Set[String], inputExpr: Expression) 
+  extends MimirFunction
 {
-  val argNames = schema.map(_._1)
   val inlinedExpr = rewrite(inputExpr)
-  val extractor: ( ()=>PrimitiveValue ) = argNames.zipWithIndex.map( {
+  val extractor: List[()=>PrimitiveValue] = schema.zipWithIndex.map( {
     case (name, i) =>
-      if(childBundles.contains(name)) { () => ExpressionUtils.deserializePrimitiveValue(value_text(i)) }
+      if(childBundles.contains(name)) { () => ValueBundle(TupleBundles.deserialize(value_text(i))) }
       else { () => value_mimir(i) }
   })
 
   var sampleIdx = 0
 
-  def apply(args: List[PrimitiveValue]): PrimitiveValue = 
+  def eval(args: List[PrimitiveValue]): Array[PrimitiveValue] = 
   {
-    Eval.eval(inlined, argsNames.zip(args).toMap)
+    val scope = schema.zip(args).toMap
+
+    (0 to TupleBundles.SAMPLE_COUNT).map( (i) => {
+      sampleIdx = i;
+      Eval.eval(inlinedExpr, scope)
+    }).toArray
   }
+
+  def apply(args: List[PrimitiveValue]): PrimitiveValue =
+    ValueBundle(eval(args))
 
   def xFunc(): Unit =
   {
-    apply( extractor.map( _() ) )
+    result(
+      TupleBundles.serialize(
+        eval( extractor.map( _() ) )
+      )
+    )
   }
 
   def rewrite(e: Expression): Expression =
@@ -119,7 +196,7 @@ class TupleBundleEval(schema:List[(String, Type.T)], childBundles: Set[String], 
   }
 }
 
-class SelectValue(varName: String, ctx: TupleBundleEval) extends Proc(List(Var(varName)))
+case class SelectValue(varName: String, ctx: TupleBundleEval) extends Proc(List(Var(varName)))
 {
   def getType(argTypes: List[Type.T]): Type.T = return argTypes(0)
   def get(v: List[PrimitiveValue]): PrimitiveValue =
@@ -129,9 +206,10 @@ class SelectValue(varName: String, ctx: TupleBundleEval) extends Proc(List(Var(v
       case x => x
     }
   }
+  def rebuild(v: List[Expression]) = this
 }
 
-class SelectSample(
+case class SelectSample(
   args: List[Expression], 
   name: String, 
   model: Model, 
@@ -142,38 +220,37 @@ class SelectSample(
   def getType(argTypes: List[Type.T]): Type.T = model.varType(idx, argTypes)
   def get(v: List[PrimitiveValue]): PrimitiveValue = 
   {
-    Random rnd = new Random((ctx.sampleIdx+":"+name+"_"+idx+"_"+v.map(_.toString).mkString("_")).hashCode)
+    val rnd = new Random((ctx.sampleIdx+":"+name+"_"+idx+"_"+v.map(_.toString).mkString("_")).hashCode)
     model.sample(idx, rnd, v)
   }
+  def rebuild(v: List[Expression]) = SelectSample(v, name, model, idx, ctx)
 }
 
 class CheckTupleBundle() extends org.sqlite.Function
 {
   def xFunc(): Unit = 
   {
-    ExpressionUtils.deserializePrimitiveValue(value_text(0)) match {
-      case ValueBundle(_, v) =>
-        if(v.exists( { case BooleanPrimitive(x) => x } ){ result(1) } else { result(0) }
-    }
+    if(
+      TupleBundles.deserialize(value_text(0)).
+        exists( { case BoolPrimitive(x) => x } )
+    ){ result(1) } else { result(0) }
   }
 }
 
 class InitTupleBundle() extends org.sqlite.Function
 {
-  val empty = (0 to TupleBundles.SAMPLE_COUNT).map ( BooleanPrimitive(true) ).toArray
-
   def xFunc(): Unit = 
   {
-    result(ExpressionUtils.serializePrimitiveValue(ValueBundle(Type.TBool, empty)))
+    result(TupleBundles.empty)
   }
 }
 
-case class ValueBundle(t:Type.T, val v: Array[PrimitiveValue]) extends PrimitiveValue(t) {
+case class ValueBundle(val v: Array[PrimitiveValue]) extends PrimitiveValue(Type.TAny) {
   def asLong: Long = throw new SQLException("Can't cast value bundle to Long")
   def asDouble: Double = throw new SQLException("Can't cast value bundle to Double")
 
   def asString: String = v.mkString(",")
   def payload: Object = v
 
-  def get(i: Int) => v(i)
+  def get(i: Int) = v(i)
 }

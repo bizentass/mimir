@@ -1,5 +1,8 @@
 package mimir.algebra;
 
+import java.io._
+import java.util.Base64
+
 /**
  * Utility methods for manipulating expressions
  */
@@ -199,7 +202,7 @@ object ExpressionUtils {
     return Base64.getEncoder().encodeToString(baos.toByteArray());
   }
 
-  def deserializeExpression(s: String): PrimitiveValue =
+  def deserializePrimitiveValue(s: String): PrimitiveValue =
   {
     val bais = new ByteArrayInputStream(Base64.getDecoder().decode(s));
     val ois = new ObjectInputStream(bais);
