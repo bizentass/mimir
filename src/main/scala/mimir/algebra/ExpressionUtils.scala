@@ -175,4 +175,34 @@ object ExpressionUtils {
       case _ => List(e)
     }
   }
+
+  def serializeExpression(expr: Expression): String = 
+  {
+    val baos = new ByteArrayOutputStream();
+    val oos = new ObjectOutputStream(baos);
+    oos.writeObject(expr);
+    return Base64.getEncoder().encodeToString(baos.toByteArray());
+  }
+
+  def deserializeExpression(s: String): Expression =
+  {
+    val bais = new ByteArrayInputStream(Base64.getDecoder().decode(s));
+    val ois = new ObjectInputStream(bais);
+    return ois.readObject().asInstanceOf[Expression]
+  }
+
+  def serializePrimitiveValue(prim: PrimitiveValue): String = 
+  {
+    val baos = new ByteArrayOutputStream();
+    val oos = new ObjectOutputStream(baos);
+    oos.writeObject(prim);
+    return Base64.getEncoder().encodeToString(baos.toByteArray());
+  }
+
+  def deserializeExpression(s: String): PrimitiveValue =
+  {
+    val bais = new ByteArrayInputStream(Base64.getDecoder().decode(s));
+    val ois = new ObjectInputStream(bais);
+    return ois.readObject().asInstanceOf[PrimitiveValue]
+  }
 }
