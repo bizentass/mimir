@@ -1,6 +1,6 @@
 package mimir.lenses
 
-import java.io.File
+import java.io._
 import java.sql._
 import java.util
 
@@ -17,7 +17,7 @@ import scala.util._
 class RepairKeyLens(name: String, args: List[Expression], source: Operator)
   extends Lens(name, args, source) with LazyLogging
 {
-  val keyCols: List[String] = args.map(_.asInstanceOf[PrimitiveValue].asString)
+  val keyCols: List[String] = args.map(_.asInstanceOf[PrimitiveValue].asString).map(_.toUpperCase)
   val dependentCols: List[String] = 
     (source.schema.map(_._1).toSet -- keyCols.toSet).toList
 
@@ -55,7 +55,7 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
 
   def build(db: Database): Unit = 
   {
-    logger.debug(s"Building Repair Key Lens $name")
+    logger.debug(s"Building Repair Key Lens $name\n$source")
     val whichKeysAreDupped =
       db.ra.convert(
         OperatorUtils.projectColumns(
@@ -101,6 +101,36 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
       ( keyRow, rowRepair )
     }).toMap
 
+  }
+
+
+
+  override def save(db: Database): Unit = {
+
+    val path = new File(
+      new File(db.lenses.serializationFolderPath.toString),
+      name+"_repairs"
+    )
+    path.getParentFile.mkdirs()
+    val os = new ObjectOutputStream(new FileOutputStream(path));
+    os.writeObject(repairs);
+
+  }
+
+  override def load(db: Database): Unit = {
+    try {
+      val path = new File(
+        new File(db.lenses.serializationFolderPath.toString),
+        name+"_repairs"
+      )
+      val is = new ObjectInputStream(new FileInputStream(path));
+      repairs = is.readObject().asInstanceOf[Map[List[PrimitiveValue], List[List[PrimitiveValue]]]];
+    } catch {
+      case e: IOException =>
+        logger.warn(name+": LOAD LENS FAILED, REBUILDING...")
+        build(db)
+        save(db)
+    }
   }
 
   def guessRepair(idx: Int, args: List[PrimitiveValue]): PrimitiveValue =

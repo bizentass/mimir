@@ -1,7 +1,6 @@
 package mimir.algebra;
 
 import java.io._
-import java.util.Base64
 
 /**
  * Utility methods for manipulating expressions
@@ -179,32 +178,32 @@ object ExpressionUtils {
     }
   }
 
-  def serializeExpression(expr: Expression): String = 
+  def serializeExpression(expr: Expression): Array[Byte] = 
   {
     val baos = new ByteArrayOutputStream();
     val oos = new ObjectOutputStream(baos);
     oos.writeObject(expr);
-    return Base64.getEncoder().encodeToString(baos.toByteArray());
+    return baos.toByteArray();
   }
 
-  def deserializeExpression(s: String): Expression =
+  def deserializeExpression(s: Array[Byte]): Expression =
   {
-    val bais = new ByteArrayInputStream(Base64.getDecoder().decode(s));
+    val bais = new ByteArrayInputStream(s);
     val ois = new ObjectInputStream(bais);
     return ois.readObject().asInstanceOf[Expression]
   }
 
-  def serializePrimitiveValue(prim: PrimitiveValue): String = 
+  def serializePrimitiveValue(prim: PrimitiveValue): Array[Byte] = 
   {
     val baos = new ByteArrayOutputStream();
     val oos = new ObjectOutputStream(baos);
     oos.writeObject(prim);
-    return Base64.getEncoder().encodeToString(baos.toByteArray());
+    return baos.toByteArray();
   }
 
-  def deserializePrimitiveValue(s: String): PrimitiveValue =
+  def deserializePrimitiveValue(s: Array[Byte]): PrimitiveValue =
   {
-    val bais = new ByteArrayInputStream(Base64.getDecoder().decode(s));
+    val bais = new ByteArrayInputStream(s);
     val ois = new ObjectInputStream(bais);
     return ois.readObject().asInstanceOf[PrimitiveValue]
   }

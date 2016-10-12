@@ -10,6 +10,7 @@
   <logger name="mimir.algebra.ExpressionChecker" level="INFO"/>
   <logger name="mimir.algebra.Typechecker" level="INFO"/>
   <logger name="mimir.exec.Compiler" level="INFO"/>
+  <logger name="mimir.lenses.LensManager" level="DEBUG"/>
   <logger name="mimir.lenses.BestGuessCache" level="INFO"/>
   <logger name="mimir.lenses.RepairKeyLens" level="INFO"/>
   <logger name="mimir.ctables.CTExplainer" level="INFO"/>

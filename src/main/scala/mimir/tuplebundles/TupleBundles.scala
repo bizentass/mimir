@@ -2,7 +2,6 @@ package mimir.tuplebundle
 
 import java.sql.SQLException
 import java.io._
-import java.util.Base64
 import java.util.Random
 
 import mimir._
@@ -20,17 +19,17 @@ object TupleBundles {
   val empty = TupleBundles.serialize((0 to SAMPLE_COUNT).map ( (_) => BoolPrimitive(true) ).toArray)
 
 
-  def serialize(v: Array[PrimitiveValue]): String = 
+  def serialize(v: Array[PrimitiveValue]): Array[Byte] = 
   {
     val baos = new ByteArrayOutputStream();
     val oos = new ObjectOutputStream(baos);
     oos.writeObject(v);
-    return Base64.getEncoder().encodeToString(baos.toByteArray());
+    return baos.toByteArray();
   }
 
-  def deserialize(s: String): Array[PrimitiveValue] =
+  def deserialize(s: Array[Byte]): Array[PrimitiveValue] =
   {
-    val bais = new ByteArrayInputStream(Base64.getDecoder().decode(s));
+    val bais = new ByteArrayInputStream(s);
     val ois = new ObjectInputStream(bais);
     return ois.readObject().asInstanceOf[Array[PrimitiveValue]]
   }
@@ -158,7 +157,7 @@ class TupleBundleEval(schema:List[String], childBundles: Set[String], inputExpr:
   val inlinedExpr = rewrite(inputExpr)
   val extractor: List[()=>PrimitiveValue] = schema.zipWithIndex.map( {
     case (name, i) =>
-      if(childBundles.contains(name)) { () => ValueBundle(TupleBundles.deserialize(value_text(i))) }
+      if(childBundles.contains(name)) { () => ValueBundle(TupleBundles.deserialize(value_blob(i))) }
       else { () => value_mimir(i) }
   })
 
@@ -231,7 +230,7 @@ class CheckTupleBundle() extends org.sqlite.Function
   def xFunc(): Unit = 
   {
     if(
-      TupleBundles.deserialize(value_text(0)).
+      TupleBundles.deserialize(value_blob(0)).
         exists( { case BoolPrimitive(x) => x } )
     ){ result(1) } else { result(0) }
   }

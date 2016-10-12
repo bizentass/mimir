@@ -4,6 +4,8 @@ import java.io.File
 import java.nio.file.Path
 import java.sql._
 
+import com.typesafe.scalalogging.slf4j.LazyLogging
+
 import mimir.Database
 import mimir.algebra._
 import mimir.ctables._
@@ -15,7 +17,7 @@ import scala.collection.JavaConversions._
 
 class LensException(msg: String, trigger: Throwable) extends Exception(msg, trigger);
 
-class LensManager(db: Database) {
+class LensManager(db: Database) extends LazyLogging {
   var lensCache = scala.collection.mutable.Map[String,Lens]()
 
   def serializationFolderPath: Path = java.nio.file.Paths.get("serialized", "__"+db.getName)
@@ -86,12 +88,17 @@ class LensManager(db: Database) {
         args,
         source
       );
+    logger.debug("Building Lens")
     lens.build(db);
     if(!db.backend.supportsInlineBestGuess()){
+      logger.debug("Building Best Guess Cache...")
       db.bestGuessCache.buildCache(lens);
     }
+    logger.debug("Caching Lens")
     lensCache.put(lensName, lens);
+    logger.debug("Serializing and Saving Lens")
     save(lens);
+    logger.debug("Lens Ready")
   }
 
   def save(lens: Lens): Unit = {
