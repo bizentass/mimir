@@ -56,23 +56,27 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
   def build(db: Database): Unit = 
   {
     logger.debug(s"Building Repair Key Lens $name\n$source")
-    val whichKeysAreDupped =
+    val duppedRepairs =
       db.ra.convert(
-        OperatorUtils.projectColumns(
-          keyCols,
-          Select(
-            ExpressionUtils.makeOr(dependentCols.map( (col) => {
-              Comparison(Cmp.Gt, Var(col), IntPrimitive(1))
-            })),
-            Aggregate(
-              dependentCols.map( (col) => {
-                AggregateArg("COUNT_DISTINCT", List(Var(col)), col)
-              }),
-              keyCols.map(Var(_)).toList,
-              source
+        Select(
+          keyCols.map( (x) => Comparison(Cmp.Eq, Var("MIMIR_KEY_"+x), Var(x)))
+          Join(
+            Project(
+              keyCols.map( (x) => ProjectArg("MIMIR_KEY_"+x, Var(x))),
+              Select(
+                ExpressionUtils.makeOr(dependentCols.map( (col) => {
+                  Comparison(Cmp.Gt, Var(col), IntPrimitive(1))
+                })),
+                Aggregate(
+                  dependentCols.map( (col) => {
+                    AggregateArg("COUNT_DISTINCT", List(Var(col)), col)
+                  }),
+                  keyCols.map(Var(_)).toList,
+                  source
+                )
+              )
             )
           )
-        )
       ).toString
     val dups = db.backend.resultRows(whichKeysAreDupped)
     val schMap = source.schema.toMap

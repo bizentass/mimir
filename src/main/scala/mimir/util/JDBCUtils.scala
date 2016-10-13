@@ -78,7 +78,7 @@ object JDBCUtils {
     else { ret }
   }
 
-  def extractAllRows(results: ResultSet): List[List[PrimitiveValue]] =
+  def extractAllRows(results: ResultSet): Iterator[List[PrimitiveValue]] =
   {
     val meta = results.getMetaData()
     val schema = 
@@ -88,20 +88,25 @@ object JDBCUtils {
     extractAllRows(results, schema)    
   }
 
-  def extractAllRows(results: ResultSet, schema: List[Type.T]): List[List[PrimitiveValue]] =
+  def extractAllRows(results: ResultSet, schema: List[Type.T]): Iterator[List[PrimitiveValue]] =
   {
-    var ret = List[List[PrimitiveValue]]()
-    // results.first();
-    while(results.isBeforeFirst()){ results.next(); }
-    while(!results.isAfterLast()){
-      ret = 
-        schema.
-          zipWithIndex.
-          map( t => convertField(t._1, results, t._2+1) ).
-          toList :: ret
-      results.next()
-    }
-    ret.reverse
+    JDBCResultSetIterable(results, schema)
   }
 
+}
+
+class JDBCResultSetIterable(results: ResultSet, schema: List[Type.T]) extends Iterator[List[PrimitiveValue]]
+{
+  def next(): List[PrimitiveValue] = 
+  {
+    while(results.isBeforeFirst()){ results.next(); }
+    val ret = schema.
+          zipWithIndex.
+          map( t => JDBCUtils.convertField(t._1, results, t._2+1) ).
+          toList
+    results.next();
+    return ret;
+  }
+
+  def hasNext(): Boolean = { return !results.isAfterLast() }
 }
