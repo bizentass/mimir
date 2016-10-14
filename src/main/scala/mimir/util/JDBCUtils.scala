@@ -90,7 +90,7 @@ object JDBCUtils {
 
   def extractAllRows(results: ResultSet, schema: List[Type.T]): Iterator[List[PrimitiveValue]] =
   {
-    JDBCResultSetIterable(results, schema)
+    new JDBCResultSetIterable(results, schema)
   }
 
 }

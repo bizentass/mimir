@@ -278,7 +278,7 @@ class CTExplainer(db: Database) extends LazyLogging {
 			throw new InvalidProvenance(""+baseData.size+" rows for token", token)
 		}	
 
-		val tuple = finalSchema.map(_._1).zip(baseData(0)).toMap
+		val tuple = finalSchema.map(_._1).zip(baseData.next()).toMap
 
 		(tuple, columnExprs, rowCondition)
 	}

@@ -56,55 +56,60 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
   def build(db: Database): Unit = 
   {
     logger.debug(s"Building Repair Key Lens $name\n$source")
-    val duppedRepairs =
-      db.ra.convert(
+    val whichKeysAreDupped =
+      Project(
+        keyCols.map( (x) => ProjectArg("MIMIR_KEY_"+x, Var(x))),
         Select(
-          keyCols.map( (x) => Comparison(Cmp.Eq, Var("MIMIR_KEY_"+x), Var(x)))
-          Join(
-            Project(
-              keyCols.map( (x) => ProjectArg("MIMIR_KEY_"+x, Var(x))),
-              Select(
-                ExpressionUtils.makeOr(dependentCols.map( (col) => {
-                  Comparison(Cmp.Gt, Var(col), IntPrimitive(1))
-                })),
-                Aggregate(
-                  dependentCols.map( (col) => {
-                    AggregateArg("COUNT_DISTINCT", List(Var(col)), col)
-                  }),
-                  keyCols.map(Var(_)).toList,
-                  source
-                )
-              )
-            )
-          )
-      ).toString
-    val dups = db.backend.resultRows(whichKeysAreDupped)
-    val schMap = source.schema.toMap
-    
-    val repairsForKey = 
-      db.ra.convert(
-        OperatorUtils.projectColumns(
-          dependentCols,
-          Select(
-            ExpressionUtils.makeAnd(keyCols.map( (col) => 
-              Comparison(Cmp.Eq, Var(col), JDBCVar(schMap(col)))
-            )),
+          ExpressionUtils.makeOr(dependentCols.map( (col) => {
+            Comparison(Cmp.Gt, Var(col), IntPrimitive(1))
+          })),
+          Aggregate(
+            dependentCols.map( (col) => {
+              AggregateArg("COUNT_DISTINCT", List(Var(col)), col)
+            }),
+            keyCols.map(Var(_)).toList,
             source
           )
         )
-      ).toString
+      )
+    val duppedRepairs =
+      OperatorUtils.projectColumns(
+        keyCols ++ dependentCols,
+        Select(
+          ExpressionUtils.makeAnd(
+            keyCols.map( (x) => Comparison(Cmp.Eq, Var("MIMIR_KEY_"+x), Var(x)))
+          ),
+          Join(
+            whichKeysAreDupped,
+            source
+          )
+        )
+      )
 
-    repairs = dups.map( (keyRow) => {
-      val candidates = 
-        db.backend.resultRows(repairsForKey, keyRow)
-      logger.trace(s"Finding repairs for $keyRow: $candidates")
-      val rowRepair = 
-        ListUtils.unzip( candidates ).
-          map( _.flatten.toSet.toList )
-      logger.debug(s"Registering repair for $keyRow: $rowRepair")      
-      ( keyRow, rowRepair )
-    }).toMap
+    val sql = db.ra.convert(whichKeysAreDupped);
+    // XXX HACK XXX
+    // OrderBy isn't implemented in RA.  Fake it with SQL
+    sql.asInstanceOf[net.sf.jsqlparser.statement.select.PlainSelect].setOrderByElements(
+      keyCols.map( (key) => {
+        val ob = new net.sf.jsqlparser.statement.select.OrderByElement()
+        ob.setExpression(new net.sf.jsqlparser.schema.Column(new net.sf.jsqlparser.schema.Table(null, null), key))
+        ob
+      }).toList
+    )
 
+    repairs = 
+      db.backend.
+        resultRows(sql).
+        map( _.splitAt(keyCols.length) ).
+        foldLeft(List[(List[PrimitiveValue], List[List[PrimitiveValue]])]())( 
+          (groups, keyAndData) => {
+            if(groups.isEmpty || !groups.head._1.equals(keyAndData._1)){
+              (keyAndData._1, List(keyAndData._2)) :: groups
+            } else {
+              (groups.head._1, keyAndData._2 :: groups.head._2) :: groups.tail
+            }
+        }).
+        toMap
   }
 
 
@@ -143,7 +148,7 @@ class RepairKeyLens(name: String, args: List[Expression], source: Operator)
       case None => NullPrimitive()
       case Some(rowRepair) => {
         logger.trace(s"Repair: $args-$idx -> $rowRepair")
-        rowRepair(idx)(0)
+        rowRepair(0)(idx)
       }
     }
   }
@@ -164,8 +169,8 @@ class FDRepairModel(lens: RepairKeyLens) extends Model with LazyLogging {
   }
   def sample(idx: Int, randomness: Random, args: List[PrimitiveValue]): PrimitiveValue = 
   {
-    val possibilities = lens.repairs(args)(idx);
-    possibilities(randomness.nextInt() % possibilities.length)
+    val possibilities = lens.repairs(args);
+    possibilities(randomness.nextInt() % possibilities.length)(idx)
   }
   def varType(idx: Int, argTypes: List[Type.T]): Type.T = 
   {

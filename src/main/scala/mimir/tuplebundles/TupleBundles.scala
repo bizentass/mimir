@@ -219,7 +219,7 @@ case class SelectSample(
   def getType(argTypes: List[Type.T]): Type.T = model.varType(idx, argTypes)
   def get(v: List[PrimitiveValue]): PrimitiveValue = 
   {
-    val rnd = new Random((ctx.sampleIdx+":"+name+"_"+idx+"_"+v.map(_.toString).mkString("_")).hashCode)
+    val rnd = new Random((ctx.sampleIdx+":"+name+"_"+v.map(_.toString).mkString("_")).hashCode)
     model.sample(idx, rnd, v)
   }
   def rebuild(v: List[Expression]) = SelectSample(v, name, model, idx, ctx)
