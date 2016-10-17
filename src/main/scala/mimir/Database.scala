@@ -118,19 +118,23 @@ case class Database(name: String, backend: Backend)
    */
   def dump(result: ResultIterator): Unit =
   {
-    println(result.schema.map( _._1 ).mkString(","))
-    println("------")
-    while(result.getNext()){
-      println(
-        (0 until result.numCols).map( (i) => {
-          if( i == 0 ){
-            result(i) match {
-              case NullPrimitive() => "'NULL'"
-              case _ => result(i)
-            }
+    Mimir.ifEnabled("SILENT-TEST", () => {
+      var x = 0
+      while(result.getNext()){ x += 1; if(x % 10000 == 0) {println(s"$x rows")} }
+      println(s"Total $x rows")
+    }, () => {
+        println(result.schema.map( _._1 ).mkString(","))
+   	 println("------")
+   	  while(result.getNext()){
+	        println(
+		        (0 until result.numCols).map( (i) => {
+			          if( i == 0 ){
+				        result(i) match {
+					   case NullPrimitive() => "'NULL'"
+					   case _ => result(i)
+            				}
 
-          }
-          else{
+				  } else{
             result(i)+(
               if(!result.deterministicCol(i)){ "*" } else { "" }
               )
@@ -146,6 +150,7 @@ case class Database(name: String, backend: Backend)
     if(result.missingRows()){
       println("( There may be missing result rows )")
     }
+})
 
 //    isNullCheck()
 
