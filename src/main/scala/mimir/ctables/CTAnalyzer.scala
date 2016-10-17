@@ -99,6 +99,67 @@ object CTAnalyzer {
     }
   }
 
+  def compileCausality(expr: Expression): List[(Expression, VGTerm)] =
+    compileCausality(expr, BoolPrimitive(true))
+
+  def compileCausality(expr: Expression, inputCondition: Expression): List[(Expression, VGTerm)] = 
+  {
+    expr match { 
+      case Conditional(condition, thenClause, elseClause) => {
+
+        val conditionCausality = compileCausality(condition, inputCondition)
+
+        val thenElseCondition = 
+          if(CTables.isDeterministic(condition)){ 
+            ExpressionUtils.makeAnd(inputCondition, condition)
+          } else {
+            inputCondition
+          }
+
+        conditionCausality ++ 
+          compileCausality(thenClause, thenElseCondition) ++
+          compileCausality(elseClause, thenElseCondition)
+      }
+
+      case Arithmetic(Arith.And, l, r) => {
+        (CTables.isDeterministic(l), CTables.isDeterministic(r)) match {
+          case (true, true)   => List()
+          case (false, true)  => 
+            compileCausality(l, 
+              ExpressionUtils.makeAnd(inputCondition, ExpressionUtils.makeNot(r))
+            )
+          case (true, false)  => 
+            compileCausality(r, 
+              ExpressionUtils.makeAnd(inputCondition, ExpressionUtils.makeNot(l))
+            )
+          case (false, false) => 
+            compileCausality(l, inputCondition) ++ compileCausality(r, inputCondition)
+        }
+      }
+
+      case Arithmetic(Arith.Or, l, r) => {
+        (CTables.isDeterministic(l), CTables.isDeterministic(r)) match {
+          case (true, true)   => List()
+          case (false, true)  => 
+            compileCausality(l, 
+              ExpressionUtils.makeAnd(inputCondition, r)
+            )
+          case (true, false)  => 
+            compileCausality(r, 
+              ExpressionUtils.makeAnd(inputCondition, l)
+            )
+          case (false, false) => 
+            compileCausality(l, inputCondition) ++ compileCausality(r, inputCondition)
+        }
+      }
+
+      case x: VGTerm => List( (inputCondition, x) )
+
+      case _ => expr.children.flatMap(compileCausality(_, inputCondition))
+
+    }
+  }
+
   def compileSample(expr: Expression, seed: Expression): Expression =
   {
     expr match {

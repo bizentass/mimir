@@ -5,11 +5,16 @@ import java.sql._
 import mimir.ctables.CTables
 
 case class TypeException(found: Type.T, expected: Type.T, 
-                    context:String) 
+                    detail:String, context:Option[Expression] = None) 
   extends Exception(
-    "Type Mismatch ["+context+
+    "Type Mismatch ["+detail+
     "]: found "+found.toString+
-    ", but expected "+expected.toString
+    ", but expected "+expected.toString+(
+      context match {
+        case None => ""
+        case Some(expr) => " "+expr.toString
+      }
+    )
   );
 class RAException(msg: String) extends Exception(msg);
 
@@ -113,7 +118,7 @@ abstract class LeafExpression extends Expression {
  * Slightly more specific base type for constant terms.  PrimitiveValue
  * also acts as a boxing type for constants in Mimir.
  */
-abstract class PrimitiveValue(t: Type.T) 
+@serializable abstract class PrimitiveValue(t: Type.T) 
   extends LeafExpression 
 {
   def getType = t
@@ -215,7 +220,7 @@ case class DatePrimitive(y: Int, m: Int, d: Int)
   override def toString() = "DATE '"+y+"-"+m+"-"+d+"'"
   def asLong: Long = throw new TypeException(TDate, TInt, "Cast");
   def asDouble: Double = throw new TypeException(TDate, TFloat, "Cast");
-  def asString: String = toString;
+  def asString: String = (y+"-"+m+"-"+d);
   def payload: Object = (y, m, d).asInstanceOf[Object];
   def compare(c: DatePrimitive): Integer = {
     if(c.y < y){ -1 }

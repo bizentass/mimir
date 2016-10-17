@@ -102,6 +102,7 @@ class LensManager(db: Database) extends LazyLogging {
   }
 
   def save(lens: Lens): Unit = {
+    lens.save(db)
     db.backend.update("""
       INSERT INTO MIMIR_LENSES(name, query, lens_type, parameters) 
       VALUES (?,?,?,?)
@@ -111,7 +112,6 @@ class LensManager(db: Database) extends LazyLogging {
       StringPrimitive(lens.lensType),
       StringPrimitive(lens.args.map(_.toString).mkString(","))
     ))
-    lens.save(db)
   }
   
   def load(lensName: String): Option[Lens] = {
@@ -125,12 +125,14 @@ class LensManager(db: Database) extends LazyLogging {
             FROM MIMIR_LENSES
             WHERE name = ?
           """, List(StringPrimitive(lensName)))
-        if(lensMetaResult.length == 0) { 
+        if(!lensMetaResult.hasNext()) { 
           return None; 
-        } else if(lensMetaResult.length > 1){ 
-          throw new SQLException("Multiple definitions for Lens `"+lensName+"`")
         } else {
-          val lensMeta = lensMetaResult(0)
+          val lensMeta = lensMetaResult.next()
+          if(lensMetaResult.hasNext){ 
+            throw new SQLException("Multiple definitions for Lens `"+lensName+"`")
+          }
+
           val lens = 
             mkLens(
               lensMeta(0).asString, 
@@ -156,7 +158,7 @@ class LensManager(db: Database) extends LazyLogging {
         SELECT NAME
         FROM MIMIR_LENSES
       """).
-    map(_(0).asString.toUpperCase)
+    map(_(0).asString.toUpperCase).toList
   }
 
   def modelForLens(lensName: String): Model = 

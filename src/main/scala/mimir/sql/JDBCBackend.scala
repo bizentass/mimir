@@ -7,10 +7,10 @@ import mimir.Methods
 import mimir.algebra._
 import mimir.util.JDBCUtils
 import mimir.sql.sqlite._
+import mimir.tuplebundle._
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
-;
 
 class JDBCBackend(backend: String, filename: String) extends Backend with LazyLogging
 {
@@ -27,11 +27,14 @@ class JDBCBackend(backend: String, filename: String) extends Backend with LazyLo
       assert(openConnections >= 0)
       if (openConnections == 0) {
         conn = backend match {
-          case "sqlite" | "sqlite-inline" =>
+          case "sqlite" | "sqlite-inline" | "sqlite-bundles" =>
             Class.forName("org.sqlite.JDBC")
             val path = java.nio.file.Paths.get("databases", filename).toString
             var c = java.sql.DriverManager.getConnection("jdbc:sqlite:" + path)
             SQLiteCompat.registerFunctions(c)
+            if(backend.equals("sqlite-bundles")){
+              TupleBundles.init(c)
+            }
             c
 
           case "oracle" =>
@@ -159,25 +162,31 @@ class JDBCBackend(backend: String, filename: String) extends Backend with LazyLo
         val tables = this.getAllTables().map{(x) => x.toUpperCase}
         if(!tables.contains(table.toUpperCase)) return None
 
-        val cols = backend match {
-          case "sqlite" | "sqlite-inline" => conn.getMetaData().getColumns(null, null, table, "%")
-          case "oracle" => conn.getMetaData().getColumns(null, "ARINDAMN", table, "%")  // TODO Generalize
+        val cols: Option[List[(String, Type.T)]] = backend match {
+          case "sqlite" | "sqlite-inline" | "sqlite-bundles" => {
+            // SQLite doesn't recognize anything more than the simplest possible types.
+            // Type information is persisted but not interpreted, so conn.getMetaData() 
+            // is useless for getting schema information.  Instead, we need to use a
+            // SQLite-specific PRAGMA operation.
+            SQLiteCompat.getTableSchema(conn, table)
+          }
+          case "oracle" => 
+            val columnRet = conn.getMetaData().getColumns(null, "ARINDAMN", table, "%")  // TODO Generalize
+            var ret = List[(String, Type.T)]()
+            while(columnRet.isBeforeFirst()){ columnRet.next(); }
+            while(!columnRet.isAfterLast()){
+              ret = ret ++ List((
+                columnRet.getString("COLUMN_NAME").toUpperCase,
+                JDBCUtils.convertSqlType(columnRet.getInt("DATA_TYPE"))
+                ))
+              columnRet.next()
+            }
+            columnRet.close()
+            Some(ret)
         }
 
-        var ret = List[(String, Type.T)]()
-
-        while(cols.isBeforeFirst()){ cols.next(); }
-        while(!cols.isAfterLast()){
-          ret = ret ++ List((
-            cols.getString("COLUMN_NAME").toUpperCase,
-            JDBCUtils.convertSqlType(cols.getInt("DATA_TYPE"))
-            ))
-          cols.next()
-        }
-        cols.close()
-
-        tableSchemas += table -> ret
-        Some(ret)
+        cols match { case None => (); case Some(s) => tableSchemas += table -> s }
+        cols
 
     }
   }
@@ -189,7 +198,7 @@ class JDBCBackend(backend: String, filename: String) extends Backend with LazyLo
 
     val metadata = conn.getMetaData()
     val tables = backend match {
-      case "sqlite" | "sqlite-inline" => metadata.getTables(null, null, "%", null)
+      case "sqlite" | "sqlite-inline" | "sqlite-bundles" => metadata.getTables(null, null, "%", null)
       case "oracle" => metadata.getTables(null, "ARINDAMN", "%", null) // TODO Generalize
     }
 
@@ -205,18 +214,19 @@ class JDBCBackend(backend: String, filename: String) extends Backend with LazyLo
 
   def specializeQuery(q: Operator): Operator = {
     backend match {
-      case "sqlite" | "sqlite-inline" => SpecializeForSQLite(q)
+      case "sqlite" | "sqlite-inline" | "sqlite-bundles" => SpecializeForSQLite(q)
       case "oracle" => q
     }
   }
   def supportsInlineBestGuess() = 
     backend match {
-      case "sqlite-inline" => true
+      case "sqlite-inline" | "sqlite-bundles" => true
       case _ => false
     }
-  def compileForBestGuess(q: Operator): Operator = {
+  def compileForBestGuess(q: Operator, idCols:List[String]): Operator = {
     backend match {
       case "sqlite-inline" => SQLiteVGTerms.bestGuess(q, conn)
+      case "sqlite-bundles" => TupleBundles.rewriteParallel(q, conn, idCols)
       case _ => ???
     }
   }

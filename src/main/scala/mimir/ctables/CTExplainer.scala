@@ -168,7 +168,7 @@ class CTExplainer(db: Database) extends LazyLogging {
 		        		bindings ++ Map("__SEED" -> IntPrimitive(rnd.nextInt()))
 		        	)
 		        } catch {
-		        	case TypeException(_,_,_) => NullPrimitive()
+		        	case TypeException(_,_,_,_) => NullPrimitive()
 		        }
         	).
 	        foldLeft(init)(accum)
@@ -256,7 +256,7 @@ class CTExplainer(db: Database) extends LazyLogging {
 
 		logger.debug(s"TRACE: $tracedQuery\nROW: $rowCondition")
 
-		val inlinedQuery = db.compiler.bestGuessQuery(tracedQuery)
+		val inlinedQuery = db.compiler.bestGuessQuery(tracedQuery, rowIdCols)
 
 		logger.debug(s"INLINE: $inlinedQuery")
 
@@ -278,7 +278,7 @@ class CTExplainer(db: Database) extends LazyLogging {
 			throw new InvalidProvenance(""+baseData.size+" rows for token", token)
 		}	
 
-		val tuple = finalSchema.map(_._1).zip(baseData(0)).toMap
+		val tuple = finalSchema.map(_._1).zip(baseData.next()).toMap
 
 		(tuple, columnExprs, rowCondition)
 	}

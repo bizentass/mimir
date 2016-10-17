@@ -30,6 +30,6 @@ class NullBackend(schema: Map[String, List[(String,Type.T)]]) extends Backend {
 
   def specializeQuery(q: Operator) = q
   def supportsInlineBestGuess() = false
-  def compileForBestGuess(q: mimir.algebra.Operator): mimir.algebra.Operator = ???
+  def compileForBestGuess(q: mimir.algebra.Operator, idCols: List[String]): mimir.algebra.Operator = ???
 
 }

@@ -23,14 +23,17 @@ class BestGuessCache(db: Database) extends LazyLogging {
   def cacheTableForTerm(term: VGTerm): String =
     cacheTableForLens(term.model._1, term.idx)
   def cacheTableDefinition(model: String, varIdx: Int, termId: Int): Table = {
-    val tableName = cacheTableForLens(model, varIdx)
-    val sch = db.getTableSchema(tableName).get;
+    val cacheTableName = cacheTableForLens(model, varIdx)
+    val sch = db.getTableSchema(cacheTableName) match {
+      case Some(sch) => sch
+      case None => throw new SQLException(s"No cache table for '$cacheTableName'")
+    }
     
     val keyCols = (0 to (sch.length - 2)).map( joinKeyColumn(_, termId) ).toList
     val dataCols = List(joinDataColumn(termId))
 
     Table(
-      tableName,
+      cacheTableName,
       (keyCols++dataCols).zip(sch.map(_._2)),
       List()
     )
@@ -132,25 +135,29 @@ class BestGuessCache(db: Database) extends LazyLogging {
 
   private def recurCacheBuildThroughLensView(view: Operator, lensName: String): Unit =
   {
-    // Start with all the expressions in the current RA node
+    logger.debug(s"Next step of caching for $lensName")
+    // Start with all the expressions in the current RA node.
     view.expressions.
-      // Find all of the VG terms in each expression
-      flatMap(CTables.getVGTerms(_)).
+      // Pick out all of the VG terms, along with the conditions under which they 
+      // contaminate the result
+      flatMap(CTAnalyzer.compileCausality(_)).
+      map( (x) => { logger.trace(s"Causality: $x"); x }).
       // Pick out those belonging to the current lens
-      filter( _.model._1.equals(lensName) ).
+      filter({ case (_, VGTerm((termName:String, _), _, _)) => termName.equals(lensName) }).
+      map( (x) => { logger.trace(s"After Model Name: $x"); x }).
       // We only need caches for data-dependent terms
-      filter( _.args.exists(ExpressionUtils.isDataDependent(_)) ).
-      // Extract the relevant attributes
-      map( (x:VGTerm) => (x.model._2, x.idx, x.args) ).
-      // Eliminate duplicates (in case the same VGTerm appears multiple times)
-      toSet.
-      // And build caches for each var
-      foreach( (x:(Model, Int, List[Expression])) => {
+      filter( _._2.args.exists(ExpressionUtils.isDataDependent(_)) ).
+      map( (x) => { logger.trace(s"Surviving: $x"); x }).
+      map({ case (cond, term) => ((term.model._2, term.idx, term.args), cond) }).
+      groupBy( _._1 ).
+      map({ case (term, groups) => (term, ExpressionUtils.makeOr(groups.map(_._2))) }).
+      foreach({ case ((model, idx, args), cond) =>
         if(view.children.length != 1){ 
           throw new SQLException("Assertion Failed: Expecting operator with expressions to have only one child")
         }
-        buildCache(lensName, x._1, x._2, x._3, view.children.head)
+        buildCache(lensName, model, idx, args, Select(cond, view.children.head))
       })
+
     // Finally recur to the child nodes
     view.children.foreach( recurCacheBuildThroughLensView(_, lensName) )
   }
@@ -162,19 +169,23 @@ class BestGuessCache(db: Database) extends LazyLogging {
     // the TypeInference lens completely messes with the typechecker.
     val typechecker = new ExpressionChecker(Typechecker.schemaOf(InlineVGTerms.optimize(input)).toMap)
 
-    logger.debug(s"Building cache on $lensName-$varIdx("+args+")")
+    logger.debug(s"Building cache on $lensName-$varIdx["+args.mkString(",")+"]")
+    logger.debug(s"Using: $input")
 
     if(db.getTableSchema(cacheTable) != None) {
+      return; 
       dropCacheTable(cacheTable)
     }
 
     val argTypes = args.map( typechecker.typeOf(_) )
     createCacheTable(cacheTable, model.varType(varIdx, argTypes), argTypes)
+    var rowCount = 0;
 
     db.query(input).foreachRow(row => {
+      rowCount += 1;
       val compiledArgs = args.map(Provenance.plugInToken(_, row.provenanceToken()))
       val tuple = row.currentTuple()
-      logger.debug(s"Processing: $tuple")
+      logger.trace(s"Processing: $tuple")
       val dataArgs = compiledArgs.map(Eval.eval(_, tuple))
       val guess = model.bestGuess(varIdx, dataArgs)
       val updateQuery = 
@@ -185,6 +196,7 @@ class BestGuessCache(db: Database) extends LazyLogging {
           ") VALUES (?"+
             dataArgs.map(_ => ",?").mkString("")+
           ")"
+      if(rowCount % 100000 == 0){ logger.debug(s" --- Row: $rowCount"); }
       // println("BUILD: "+updateQuery)
       db.backend.update(
         updateQuery, 
@@ -205,7 +217,7 @@ class BestGuessCache(db: Database) extends LazyLogging {
         typeIndex => (keyColumn(typeIndex._2), typeIndex._1)
       )
 
-    logger.debug(s"CREATING $cacheTable[$cacheTypes] -> $dataType")
+    logger.debug(s"CREATING $cacheTable["+cacheTypes.mkString(",")+s"] -> $dataType")
 
     val dataCols = List( (dataColumn, dataType) )
     val tableDirectives = 

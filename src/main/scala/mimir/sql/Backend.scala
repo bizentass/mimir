@@ -71,6 +71,6 @@ abstract class Backend {
 
   def specializeQuery(q: Operator): Operator
   def supportsInlineBestGuess(): Boolean
-  def compileForBestGuess(q: Operator): Operator
+  def compileForBestGuess(q: Operator, idCols: List[String]): Operator
 
 }

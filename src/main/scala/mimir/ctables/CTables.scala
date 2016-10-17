@@ -19,6 +19,9 @@ abstract class Model {
    * @return            A primitive value representing the best guess value.
    */
   def bestGuess      (idx: Int, args: List[PrimitiveValue]):  PrimitiveValue
+
+  def bestGuessExpression(idx: Int, args: List[Expression]): Option[Expression] = None
+
   /**
    * Generate a sample from the distribution of a variable represented by this model.
    * @param idx         The index of the variable family to generate a sample for
