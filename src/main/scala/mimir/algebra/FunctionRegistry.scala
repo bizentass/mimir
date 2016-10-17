@@ -41,7 +41,7 @@ object FunctionRegistry {
         ).min)
       },
     	{ (x: List[Type.T]) => 
-    		Typechecker.assertNumeric(Typechecker.escalate(x)) 
+    		Typechecker.assertNumeric(Typechecker.escalate(x), Function("__LIST_MIN", List())) 
     	}
     )
 
@@ -53,7 +53,7 @@ object FunctionRegistry {
         ).max)
       },
       { (x: List[Type.T]) => 
-    		Typechecker.assertNumeric(Typechecker.escalate(x)) 
+    		Typechecker.assertNumeric(Typechecker.escalate(x), Function("__LIST_MAX", List())) 
     	}
     )
 
@@ -93,8 +93,13 @@ object FunctionRegistry {
 		      case List(NullPrimitive())   => NullPrimitive()
 		      case x => throw new SQLException("Non-numeric parameter to absolute: '"+x+"'")
 		    },
-				(x: List[Type.T]) => Typechecker.assertNumeric(x(0))
+				(x: List[Type.T]) => Typechecker.assertNumeric(x(0), Function("ABSOLUTE", List()))
 			)
+
+    registerFunction("BITWISE_AND", (x) => IntPrimitive(x(0).asLong & x(1).asLong), (_) => Type.TInt)
+
+    registerFunction("JSON_EXTRACT",(_) => ???, (_) => Type.TAny)
+    registerFunction("JSON_ARRAY_LENGTH",(_) => ???, (_) => Type.TInt)
 	}
 
 	def registerFunctionSet(

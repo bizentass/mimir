@@ -132,6 +132,10 @@ class RAToSql(db: Database) {
                   func.setName("COUNT")
                   func.setDistinct(true)
                 }
+                case "JSON_GROUP_ARRAY_DISTINCT" => {
+                  func.setName("JSON_GROUP_ARRAY") 
+                  func.setDistinct(true)
+                }
                 case fn => func.setName(arg.function)
               }
               func.setParameters(new ExpressionList(new java.util.ArrayList(
@@ -396,6 +400,9 @@ class RAToSql(db: Database) {
       }
       case mimir.algebra.Function("CAST", _) => {
         throw new SQLException("Invalid Cast: "+e)
+      }
+      case mimir.algebra.Function("BITWISE_AND", List(lhs, rhs)) => {
+        new BitwiseAnd(convert(lhs, sources), convert(rhs, sources))
       }
       case mimir.algebra.Function(fname, fargs) => {
           val func = new Function()

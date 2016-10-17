@@ -12,12 +12,15 @@
   <logger name="mimir.exec.Compiler" level="INFO"/>
   <logger name="mimir.lenses.LensManager" level="DEBUG"/>
   <logger name="mimir.lenses.BestGuessCache" level="INFO"/>
-  <logger name="mimir.lenses.RepairKeyLens" level="INFO"/>
+  <logger name="mimir.lenses.RepairKeyLens" level="DEBUG"/>
+  <logger name="mimir.lenses.FDRepairModel" level="DEBUG"/>
   <logger name="mimir.ctables.CTExplainer" level="INFO"/>
   <logger name="mimir.sql.sqlite.MimirCast$" level="INFO"/>
   <logger name="mimir.sql.JDBCBackend" level="INFO"/>
   <logger name="mimir.util.LoadCSV" level="INFO"/>
- 
+  <logger name="mimir.tuplebundle.TupleBundleRewriter" level="INFO"/>
+  <logger name="mimir.tuplebundle.TupleBundleEval" level="INFO"/>
+
   <root level="TRACE">
     <appender-ref ref="STDOUT" />
   </root>

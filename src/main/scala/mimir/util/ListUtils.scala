@@ -29,4 +29,11 @@ object ListUtils {
       Nil
     }
   }
+
+  def reduce[A,B](l: List[(A, B)]): Map[A,List[B]] =
+  {
+    l.reverseIterator.foldLeft(Map[A,List[B]]())({ case (curr, (key, elem)) => 
+      curr + (key -> (elem :: curr.getOrElse(key, List[B]())))
+    })
+  }
 }

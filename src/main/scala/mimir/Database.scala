@@ -242,7 +242,7 @@ case class Database(name: String, backend: Backend)
   /**
    * Build a Table operator for the table with the provided name.
    */
-  def getTableOperator(table: String): Operator =
+  def getTableOperator(table: String): Operator = 
     backend.getTableOperator(table)
   /**
    * Build a Table operator for the table with the provided name, requesting the

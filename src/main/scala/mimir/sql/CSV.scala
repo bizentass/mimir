@@ -339,5 +339,5 @@ class CSVBackend(
 
   def specializeQuery(q: mimir.algebra.Operator) = q
   def supportsInlineBestGuess() = false
-  def compileForBestGuess(q: mimir.algebra.Operator): mimir.algebra.Operator = ???
+  def compileForBestGuess(q: mimir.algebra.Operator, idCols: List[String]): mimir.algebra.Operator = ???
 }

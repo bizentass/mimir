@@ -17,7 +17,10 @@ object InlineVGTerms {
 				if(simplifiedArgs.forall(_.isInstanceOf[PrimitiveValue])){
 					v.get(simplifiedArgs.map(_.asInstanceOf[PrimitiveValue]))
 				} else {
-					v.rebuild(simplifiedArgs)
+					model._2.bestGuessExpression(idx, simplifiedArgs) match {
+						case Some(expr) => inline(expr)
+						case None => v.rebuild(simplifiedArgs.map(inline(_)))
+					} 
 				}
 
 			case _ => e.rebuild(e.children.map(inline(_)))

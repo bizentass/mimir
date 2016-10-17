@@ -102,6 +102,7 @@ class LensManager(db: Database) extends LazyLogging {
   }
 
   def save(lens: Lens): Unit = {
+    lens.save(db)
     db.backend.update("""
       INSERT INTO MIMIR_LENSES(name, query, lens_type, parameters) 
       VALUES (?,?,?,?)
@@ -111,7 +112,6 @@ class LensManager(db: Database) extends LazyLogging {
       StringPrimitive(lens.lensType),
       StringPrimitive(lens.args.map(_.toString).mkString(","))
     ))
-    lens.save(db)
   }
   
   def load(lensName: String): Option[Lens] = {

@@ -41,8 +41,15 @@ object JDBCUtils {
     cal.setTime(d)
     convertDate(cal)
   }
-  def convertDate(s: String): DatePrimitive =
-    convertDate(Date.valueOf(s))
+  def convertDate(s: String): PrimitiveValue =
+  {
+    try {
+      val fields = s.split("-").map( Integer.parseInt(_) )
+      DatePrimitive(fields(0), fields(1), fields(2))
+    } catch {
+      case n: NumberFormatException => NullPrimitive()
+    }
+  }
 
   def convertField(t: Type.T, results: ResultSet, field: Integer): PrimitiveValue =
   {
