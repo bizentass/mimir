@@ -75,6 +75,10 @@ class Compiler(db: Database) extends LazyLogging {
     // faster
     currentQuery = optimize(currentQuery, opts)
 
+    Mimir.ifEnabled("PARTITION", () => {
+      currentQuery = CTPartition.partition(currentQuery)
+    })
+
     logger.debug(s"OPTIMIZED: $currentQuery")
 
     // Remove any VG Terms for which static best-guesses are possible
@@ -82,80 +86,53 @@ class Compiler(db: Database) extends LazyLogging {
     // looking at (like the Type Inference or Schema Matching lenses)
     currentQuery = InlineVGTerms.optimize(currentQuery)
 
-    // Experimental option: Partition into segments based on the remaining VGTerms
-    Mimir.ifEnabled("PARTITION", () => {
+    // Replace VG-Terms with their "Best Guess values"
+    currentQuery = bestGuessQuery(currentQuery, provenanceCols)
+
+    // We'll need it a few times, so cache the final operator's schema.
+    // This also forces the typechecker to run, so we get a final sanity
+    // check on the output of the rewrite rules.
+    val finalSchema = currentQuery.schema
+
+    // The final stage is to apply any database-specific rewrites to adapt
+    // the query to the quirks of each specific target database.  Each
+    // backend defines a specializeQuery method that handles this
+    currentQuery = db.backend.specializeQuery(currentQuery)
+
+    logger.debug(s"FINAL: $currentQuery")
+
+    // We'll need to line the attributes in the output up with
+    // the order in which the user expects to see them.  Build
+    // a lookup table with name + position in the query being execed.
+    val finalSchemaOrderLookup = 
+      finalSchema.map(_._1).zipWithIndex.toMap
+
+    logger.debug("Wrapping iterator");
+
+    Mimir.ifEnabled("CLASSIC-ITERATOR", () => {
       new BagUnionResultIterator(
-        CTPartition.partition(currentQuery).map(_._3).map( (q) => {
-          var currentQuery = q
+        OperatorUtils.extractUnions(currentQuery).
+          toIndexedSeq.par.
+          map({ case Project(args, src)  =>
 
-          // Replace VG-Terms with their "Best Guess values"
-          currentQuery = bestGuessQuery(currentQuery, provenanceCols)
+            val sql = db.ra.convert(currentQuery)
+            val results = 
+              db.backend.execute(sql)
 
-          // We'll need it a few times, so cache the final operator's schema.
-          // This also forces the typechecker to run, so we get a final sanity
-          // check on the output of the rewrite rules.
-          val finalSchema = currentQuery.schema
-
-          // The final stage is to apply any database-specific rewrites to adapt
-          // the query to the quirks of each specific target database.  Each
-          // backend defines a specializeQuery method that handles this
-          currentQuery = db.backend.specializeQuery(currentQuery)
-
-          // logger.debug(s"FINAL: $currentQuery")
-
-          // We'll need to line the attributes in the output up with
-          // the order in which the user expects to see them.  Build
-          // a lookup table with name + position in the query being execed.
-          val finalSchemaOrderLookup = 
-            finalSchema.map(_._1).zipWithIndex.toMap
-
-          // Generate the SQL
-          val sql = db.ra.convert(currentQuery)
-
-          // logger.debug(s"SQL: $sql")
-
-          // Deploy to the backend
-          val results = 
-            db.backend.execute(sql)
-
-
-          // And wrap the results.
-          new NonDetIterator(
-            new ResultSetIterator(results, 
-              finalSchema.toMap,
-              tagPlusOutputSchemaNames.map(finalSchemaOrderLookup(_)), 
-              provenanceCols.map(finalSchemaOrderLookup(_))
-            ),
-            outputSchema,
-            outputSchema.map(_._1).map(colDeterminism(_)), 
-            rowDeterminism
-          )
-        })
+            new mimir.deprecated.ProjectionResultIterator(
+              db, 
+              new ResultSetIterator(
+                results, 
+                finalSchema.toMap,
+                tagPlusOutputSchemaNames.map(finalSchemaOrderLookup(_)), 
+                provenanceCols.map(finalSchemaOrderLookup(_))
+              ),
+              args.map(x=>(x.name, x.expression))
+            )
+          }).toList
       )
 
-
-    }, () => { 
-      // Replace VG-Terms with their "Best Guess values"
-      currentQuery = bestGuessQuery(currentQuery, provenanceCols)
-
-      // We'll need it a few times, so cache the final operator's schema.
-      // This also forces the typechecker to run, so we get a final sanity
-      // check on the output of the rewrite rules.
-      val finalSchema = currentQuery.schema
-
-      // The final stage is to apply any database-specific rewrites to adapt
-      // the query to the quirks of each specific target database.  Each
-      // backend defines a specializeQuery method that handles this
-      currentQuery = db.backend.specializeQuery(currentQuery)
-
-      logger.debug(s"FINAL: $currentQuery")
-
-      // We'll need to line the attributes in the output up with
-      // the order in which the user expects to see them.  Build
-      // a lookup table with name + position in the query being execed.
-      val finalSchemaOrderLookup = 
-        finalSchema.map(_._1).zipWithIndex.toMap
-
+    }, () => {
       // Generate the SQL
       val sql = db.ra.convert(currentQuery)
 
@@ -164,8 +141,6 @@ class Compiler(db: Database) extends LazyLogging {
       // Deploy to the backend
       val results = 
         db.backend.execute(sql)
-
-      logger.debug("Wrapping iterator");
 
       // And wrap the results.
       new NonDetIterator(

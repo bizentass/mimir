@@ -2,9 +2,11 @@ package mimir.ctables
 
 import java.sql.SQLException
 
-import mimir.algebra._
+import mimir._
 import mimir.util._
-import mimir.optimizer.PropagateConditions;
+import mimir.algebra._
+import mimir.optimizer._
+import mimir.deprecated.OldPercolator
 
 
 object CTPartition {
@@ -42,13 +44,13 @@ object CTPartition {
 	def vgTermID(term:VGTerm): String =
 		term.model._1+"_"+term.idx
 
-	def exprTermIDs(expr: Exprssion): Set[String] =
+	def exprTermIDs(expr: Expression): Set[String] =
 		CTables.getVGTerms(expr).map(vgTermID(_)).toSet
 
 	def traceExprDependencies(oper: Operator, expr: Expression): Set[String] =
 	{
 		ExpressionUtils.getColumns(expr).toSet.
-			flatMap(traceColumnDependencies(oper, _)) ++
+			flatMap(traceColumnDependencies(oper, _:String)) ++
 				exprTermIDs(expr)
 	}
 
@@ -56,11 +58,11 @@ object CTPartition {
 	{
 		if(CTables.isDeterministic(oper)){ return Set[String]() }
 		oper match {
-			case p:Project       => traceExprDependencies(p.child, p.get(col))
-			case Select(_,child) => traceColumnDependencies(child)
-			case Union(lhs, rhs) => traceColumnDependencies(lhs, col) ++
-															traceColumnDependencies(rhs, col)
-			case Join(lhs, rhs)  => {
+			case p@Project(_,child) => traceExprDependencies(child, p.get(col).get)
+			case Select(_,child)    => traceColumnDependencies(child, col)
+			case Union(lhs, rhs)    => traceColumnDependencies(lhs, col) ++
+														       traceColumnDependencies(rhs, col)
+			case Join(lhs, rhs)     => {
 					if(lhs.schema.map(_._1).toSet contains col){
 						traceColumnDependencies(lhs, col)
 					} else {
@@ -74,7 +76,7 @@ object CTPartition {
 	{
 		if(CTables.isDeterministic(oper)){ return Set[String]() }
 		oper match {
-			case Select(cond, child) => traceExprDependencies(cond, child) ++ 
+			case Select(cond, child) => traceExprDependencies(child, cond) ++ 
 																	traceRowDependencies(child)
 			case Join(lhs, rhs)      => traceRowDependencies(lhs) ++
 																	traceRowDependencies(rhs)
@@ -84,16 +86,47 @@ object CTPartition {
 		}
 	}
 
-	def partition(oper: Operator): List[(Set[String], Operator)] =
+	def partitionOne(oper: Operator, args: List[ProjectArg], rowCondition:Expression): List[Operator] =
 	{
-		val allRowDeps = traceRowDependencies(oper)
+		findPivots(rowCondition).values.
+			map( (pivots) => {
+				val partitionCondition = 
+					constructPartition(rowCondition, pivots)
+				Mimir.ifEnabled("HYBRID", () => {
+					PushdownSelections.optimize(
+						Project(args, 
+							Select(
+								ExpressionUtils.makeAnd(partitionCondition :: pivots.toList),
+								oper
+							)
+						)
+					)
+				}, () => {
+					Project(args ++ List(ProjectArg(CTables.conditionColumn, partitionCondition)),
+						Select(ExpressionUtils.makeAnd(pivots.toList), oper)
+					)
+				})
+			}).toList
+	}
 
-		val allRowDepCombinations =
-			ListUtils.powerSet(oper.toList)
+	def partition(oper: Operator): Operator =
+	{
+		if(CTables.isDeterministic(oper)) { return oper; }
+		OperatorUtils.makeUnion(
+			OperatorUtils.extractUnions(oper).
+				map(OldPercolator.percolate(_)).
+				flatMap({ 
+					case Project(args, child) => 
+						val (condition, rest) = 
+							args.partition( _.name.equals(CTables.conditionColumn) )
 
-		 
-
-
+						partitionOne(
+							oper, 
+							rest, 
+							ExpressionUtils.makeAnd(condition.map(_.expression))
+						)
+					})
+		)
 	}
 
 
