@@ -39,99 +39,63 @@ object CTPartition {
 		}
 	}
 
-	def partition(oper: Operator): List[(Map[String,Set[String]], Set[String], Operator)] =
+	def vgTermID(term:VGTerm): String =
+		term.model._1+"_"+term.idx
+
+	def exprTermIDs(expr: Exprssion): Set[String] =
+		CTables.getVGTerms(expr).map(vgTermID(_)).toSet
+
+	def traceExprDependencies(oper: Operator, expr: Expression): Set[String] =
 	{
-		if(CTables.isDeterministic(oper)){
-			return List( (oper.schema.map(_._1).map( (_, Set[String]()) ).toMap, Set(), oper) )
-		}
+		ExpressionUtils.getColumns(expr).toSet.
+			flatMap(traceColumnDependencies(oper, _)) ++
+				exprTermIDs(expr)
+	}
+
+	def traceColumnDependencies(oper: Operator, col: String): Set[String] = 
+	{
+		if(CTables.isDeterministic(oper)){ return Set[String]() }
 		oper match {
-			case Project(args, child) =>
-				val inputPartitions = partition(child)
-
-				val perArgPartitions =
-					args.map( (arg) => {
-						findPivots(arg.expression).toList.map({ case (partitionVars, pivots) => 
-							(
-								arg.name, 
-								constructPartition(arg.expression, pivots), 
-								partitionVars, 
-								pivots
-							)
-						})
-					})
-
-				val perPartitionArgs =
-					ListUtils.powerList(perArgPartitions)
-
-				inputPartitions.flatMap({ case (childArgVGDeps, childRowVGDeps, childPartition) => 
-					perPartitionArgs.map( (myArgs) => {
-						val myArgDeps = 
-							myArgs.map({ case (name, expr, myVars, _) => 
-								(name, myVars.toSet ++ ExpressionUtils.getColumns(expr).flatMap(childArgVGDeps(_)))
-							}).toMap
-						val myArgDefns =
-							myArgs.map({ case (name, expr, _, _) => 
-								ProjectArg(name, expr)
-							})
-						val myArgConditions = myArgs.flatMap(_._4)
-
-						( 
-							myArgDeps, childRowVGDeps, 
-							Project(myArgDefns, 
-								OperatorUtils.applyFilter(myArgConditions, childPartition)
-							)
-						)
-					})
-				}) 
-
-			case Select(cond, child) => {
-
-				val inputPartitions = partition(child)
-				val pivots = 
-					findPivots(cond).toList
-
-
-				inputPartitions.flatMap({ case (childArgVGDeps, childRowVGDeps, childPartition) => 
-				  pivots.map({ case (partitionVars, pivots) => 
-
-				  	val newCond = 
-				  		constructPartition(cond, pivots)
-
-				  	val newRowDeps = 
-				  		childRowVGDeps ++ ExpressionUtils.getColumns(newCond).flatMap(childArgVGDeps(_))
-
-				  	( childArgVGDeps, newRowDeps, Select(cond, childPartition) )
-
-			  	})
-				})
-			}
-
-			case Join(lhs, rhs) => {
-
-				val lhsPartitions = partition(lhs)
-				val rhsPartitions = partition(rhs)
-
-				lhsPartitions.flatMap({ case (lhsArgVGDeps, lhsRowVGDeps, lhsPartition) =>
-					rhsPartitions.map({ case (rhsArgVGDeps, rhsRowVGDeps, rhsPartition) =>
-						(
-							lhsArgVGDeps ++ rhsArgVGDeps, 
-							lhsRowVGDeps ++ rhsRowVGDeps,
-							Join(lhsPartition, rhsPartition)
-						)
-					})
-				})
-			}
-
-			case Union(lhs, rhs) => {
-				val lhsPartitions = partition(lhs)
-				val rhsPartitions = partition(rhs)
-
-				lhsPartitions++rhsPartitions				
-			}
-
+			case p:Project       => traceExprDependencies(p.child, p.get(col))
+			case Select(_,child) => traceColumnDependencies(child)
+			case Union(lhs, rhs) => traceColumnDependencies(lhs, col) ++
+															traceColumnDependencies(rhs, col)
+			case Join(lhs, rhs)  => {
+					if(lhs.schema.map(_._1).toSet contains col){
+						traceColumnDependencies(lhs, col)
+					} else {
+						traceColumnDependencies(rhs, col)
+					}
+				}
 		}
+	}
+
+	def traceRowDependencies(oper: Operator): Set[String] =
+	{
+		if(CTables.isDeterministic(oper)){ return Set[String]() }
+		oper match {
+			case Select(cond, child) => traceExprDependencies(cond, child) ++ 
+																	traceRowDependencies(child)
+			case Join(lhs, rhs)      => traceRowDependencies(lhs) ++
+																	traceRowDependencies(rhs)
+			case Union(lhs, rhs)     => traceRowDependencies(lhs) ++
+																	traceRowDependencies(rhs)
+ 		  case Project(_,child)    => traceRowDependencies(child)
+		}
+	}
+
+	def partition(oper: Operator): List[(Set[String], Operator)] =
+	{
+		val allRowDeps = traceRowDependencies(oper)
+
+		val allRowDepCombinations =
+			ListUtils.powerSet(oper.toList)
+
+		 
+
 
 	}
+
 
 
 }
